@@ -1,0 +1,222 @@
+---
+title: "Time Type"
+description: "Details the Time struct that enables nanosecond-precision, database-compatible time-of-day storage and retrieval. Includes documentation for supported functions, nuances across databases, construction of time objects, and time-based searching with GORM."
+---
+
+# Time Type
+
+The **Time Type** in GORM Data Types provides a robust and precise way to store and handle time-of-day values within your Go models, enabling nanosecond precision and seamless compatibility across multiple SQL databases. It is designed to represent only the time portion (hours, minutes, seconds, and nanoseconds) independent of any date component, making it ideal for scenarios like scheduling, timestamps of daily events, or any domain where the time of day matters.
+
+---
+
+## Overview
+
+- Supports nanosecond precision for high fidelity time representation.
+- Compatible with MySQL, PostgreSQL, SQLite, and SQL Server databases.
+- Implements `sql.Scanner` and `driver.Valuer` interfaces for smooth database interactions.
+- Serializes cleanly to and from JSON for RESTful APIs and data interchange.
+- Handles differences in database support, such as SQLite's use of `TEXT` type for time columns.
+
+The Time Type abstracts away database-specific quirks while providing an intuitive API for developers to construct, store, query, and retrieve time values.
+
+---
+
+## Supported Databases
+
+| Database  | Column Data Type | Notes                                   |
+|-----------|------------------|-----------------------------------------|
+| MySQL     | TIME             | Supports fractional seconds             |
+| PostgreSQL| TIME             | Supports fractional seconds             |
+| SQLServer | TIME             | Supports fractional seconds             |
+| SQLite    | TEXT             | SQLite lacks a native time type; stored as `TEXT` |
+
+---
+
+## Defining and Using `datatypes.Time`
+
+The core Time type is defined as a custom type wrapping a `time.Duration` and is constructed with the provided utility function.
+
+### Creating a Time Value
+
+Use `datatypes.NewTime(hour, minute, second, nanosecond)` to create a time-of-day value with nanosecond precision.
+
+```go
+import "gorm.io/datatypes"
+
+// Construct a time at 01:02:03 with zero nanoseconds
+timeValue := datatypes.NewTime(1, 2, 3, 0)
+
+// Model example
+type UserWithTime struct {
+    ID   uint
+    Name string
+    Time datatypes.Time
+}
+
+user := UserWithTime{
+    Name: "user1",
+    Time: timeValue,
+}
+```
+
+### String Representation
+
+- Nanoseconds are included only if they are non-zero.
+- Standard format: `HH:MM:SS[.nnnnnnnnn]`.
+
+```go
+fmt.Println(timeValue.String()) // "01:02:03"
+
+// With nanoseconds
+timeWithNano := datatypes.NewTime(23, 59, 59, 123456789)
+fmt.Println(timeWithNano.String()) // "23:59:59.123456789"
+```
+
+---
+
+## Integration with GORM
+
+### Model Migration
+
+When performing migrations with GORM, fields of type `datatypes.Time` will auto-map to the appropriate column type based on the target database:
+
+```go
+DB.AutoMigrate(&UserWithTime{})
+```
+
+Column types are:
+- MySQL, PostgreSQL, SQL Server: `TIME`
+- SQLite: `TEXT` (due to lack of native time type)
+
+### Storing and Retrieving Values
+
+GORM uses the implemented `Value()` and `Scan()` methods:
+
+- **Value()** converts the `Time` to string format before saving.
+- **Scan()** handles multiple source types including `string`, `[]byte`, and `time.Time` from the database.
+
+### Querying by Time Value
+
+You can query records by time values using `datatypes.Time` just like any other field:
+
+```go
+var user UserWithTime
+err := DB.First(&user, "name = ? AND time = ?", "user1", datatypes.NewTime(1, 2, 3, 0)).Error
+if err != nil {
+    // handle error
+}
+```
+
+This executes a query matching the exact time of day.
+
+---
+
+## Detailed API Reference
+
+### Type Definition
+
+```go
+type Time time.Duration
+```
+
+### Constructor
+
+```go
+// NewTime constructs a Time instance representing the specified time of day.
+func NewTime(hour, min, sec, nsec int) Time
+```
+
+### Methods
+
+| Method           | Signature                 | Description                                                 |
+|------------------|---------------------------|-------------------------------------------------------------|
+| `GormDataType()` | `func (Time) string`       | Returns GORM's generic data type identifier (`time`).        |
+| `GormDBDataType(db, field)` | `func (Time) GormDBDataType(db *gorm.DB, field *schema.Field) string` | Returns DB-specific column type (`TIME`, or `TEXT` for SQLite).|
+| `Scan(src interface{}) error` | `func (t *Time) Scan(src interface{}) error` | Implements the `sql.Scanner` interface for DB retrieval.
+| `Value() (driver.Value, error)` | `func (t Time) Value() (driver.Value, error)` | Implements `driver.Valuer` for DB saving.
+| `String() string` | `func (t Time) String() string` | Formats Time as `HH:MM:SS[.nanoseconds]` string.
+| `MarshalJSON() ([]byte, error)` | Returns JSON string representation.
+| `UnmarshalJSON(data []byte) error` | Parses JSON time string.
+
+### Internal Helper Functions (not typically used by users)
+
+- `hours()`, `minutes()`, `seconds()`, `nanoseconds()` extract components from the internal duration value.
+
+---
+
+## Usage Examples
+
+```go
+import (
+    "fmt"
+    "gorm.io/driver/sqlite"
+    "gorm.io/gorm"
+    "gorm.io/datatypes"
+)
+
+// Define model with Time field
+type Event struct {
+    ID   uint
+    Name string
+    OccursAt datatypes.Time
+}
+
+func main() {
+    db, _ := gorm.Open(sqlite.Open(":"), &gorm.Config{})
+    db.AutoMigrate(&Event{})
+
+    // Create an event at 14:30:15
+    event := Event{
+        Name: "Lunch Break",
+        OccursAt: datatypes.NewTime(14, 30, 15, 0),
+    }
+    db.Create(&event)
+
+    var retrieved Event
+    db.First(&retrieved, "occurs_at = ?", datatypes.NewTime(14, 30, 15, 0))
+    fmt.Println("Event occurs at", retrieved.OccursAt.String())
+}
+```
+
+Expected output:
+```
+Event occurs at 14:30:15
+```
+
+---
+
+## Best Practices & Tips
+
+- Always construct `Time` values using `NewTime()` to ensure proper internal formatting.
+- When comparing or querying, build the exact `Time` value; approximate matches require custom logic.
+- SQLite stores time values as `TEXT`, so indexing behavior may differ; test performance accordingly.
+- Utilize nanosecond precision if your application demands it; if not, pass zero for the nanosecond argument.
+
+---
+
+## Troubleshooting
+
+<AccordionGroup title="Common Issues with Time Type Usage">
+<Accordion title="Query Returns No Results When Expected">
+Ensure the time value provided matches exactly, including nanoseconds. Use `datatypes.NewTime` for constructing the query parameter rather than raw strings.
+</Accordion>
+<Accordion title="SQLite Migration Creates TEXT Column Instead of TIME">
+SQLite does not have a native `TIME` type. This is expected behavior. Store time as text with formatted HH:MM:SS[.nanoseconds].
+</Accordion>
+<Accordion title="JSON Marshal/Unmarshal Errors">
+The `Time` type supports JSON serialization out of the box. Confirm JSON strings use the correct format (`HH:MM:SS` or including nanoseconds).
+</Accordion>
+</AccordionGroup>
+
+---
+
+## Related Documentation
+
+- [Date Type](/api-reference/core-data-types/date-type): For handling date-only fields.
+- [Working with Date and Time Fields](../guides/core-data-types/working-with-date-time): Guide covering practical use cases and querying.
+- [JSON Type](/api-reference/core-data-types/json-type): For combined usage of JSON and time in models.
+- [Installation and Setup](../../getting-started/setup-basics/install-gorm-datatypes): Ensure your project dependencies are configured correctly.
+
+---
+
+Feel confident using `datatypes.Time` to provide precise, database-compatible time-of-day functionality in your Go applications with GORM.
