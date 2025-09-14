@@ -1,0 +1,245 @@
+---
+title: "Querying and Filtering JSON Arrays"
+description: "How to use JSONArray and JSON querying helpers to filter records with array elements. This guide explains containment queries and provides practical examples for common application scenarios."
+---
+
+# Querying and Filtering JSON Arrays
+
+## Overview
+This guide explains how to use `JSONArray` and JSON querying helpers in GORM Data Types to filter records containing specific array elements within JSON columns. You will learn how to perform containment queries on JSON arrays using practical, database-compatible expressions for MySQL, SQLite, and PostgreSQL. These capabilities allow precise querying of JSON array data stored in your SQL databases.
+
+---
+
+## Prerequisites
+- Your Go project must include the GORM Data Types module (`gorm.io/datatypes`).
+- Supported databases for JSON array querying are MySQL and SQLite. PostgreSQL supports a simplified containment check for arrays but has limited JSON array helper support.
+- Your database schema must incorporate JSON columns properly configured for storing JSON arrays.
+- Ensure SQLite is built with the `json1` extension tag if using SQLite.
+
+---
+
+## Expected Outcome
+By following this guide, you will be able to:
+- Query JSON array fields to check if they contain specific values.
+- Filter data where JSON array fields contain any of a set of values.
+- Add key-context to containment queries for nested JSON arrays in supported databases.
+- Write queries that translate cleanly to SQL with cross-database compatibility where possible.
+
+---
+
+## Time Estimate
+Approximately 15-30 minutes to understand and implement basic JSON array filtering with examples.
+
+---
+
+## Difficulty Level
+Intermediate: Some familiarity with GORM, JSON data types, and SQL querying is recommended.
+
+---
+
+## How JSONArray Queries Work
+GORM Data Types provides the `JSONArrayQuery` expression to build queries that target JSON arrays in database columns. This expression supports two primary methods:
+
+- `Contains(value interface{}, keys ...string)`: Checks if a JSON array contains a specified element. The optional `keys` parameter specifies a nested path inside the JSON structure (supported in MySQL and SQLite).
+
+- `In(value interface{}, keys ...string)`: Checks if the JSON array contains any of the elements in a provided list (only supported in MySQL and SQLite).
+
+For PostgreSQL, `Contains` uses the simple JSONB containment operator `?` to check if a key exists at the top level (limited array support).
+
+---
+
+## Step-by-Step Instructions
+
+<Steps>
+<Step title="Step 1: Define Your Model with JSON Array Column">
+Define a GORM model that has a JSON column storing the array you intend to query. Use `datatypes.JSON` for raw JSON or strongly-typed structures for safety.
+
+```go
+import (
+  "gorm.io/datatypes"
+  "gorm.io/gorm"
+)
+
+type Param struct {
+  ID          int
+  Letters     string
+  Config      datatypes.JSON // JSON array stored here
+}
+```
+
+Migrate your database appropriately:
+
+```go
+DB.AutoMigrate(&Param{})
+```
+
+After this, insert sample data containing arrays.
+</Step>
+
+<Step title="Step 2: Insert JSON Array Data">
+Insert records with JSON arrays in the designated JSON column.
+
+```go
+DB.Create(&Param{Letters: "JSONArray-1", Config: datatypes.JSON("[\"a\", \"b\"]")})
+DB.Create(&Param{Letters: "JSONArray-2", Config: datatypes.JSON("[\"a\", \"c\"]")})
+
+// You can also insert nested JSON structures
+DB.Create(&Param{Letters: "JSONArray-3", Config: datatypes.JSON(`{"test": ["a", "b"]}`)})
+```
+
+Ensure the data correctly inserts and reflects JSON array values.
+</Step>
+
+<Step title="Step 3: Query with JSONArrayQuery Contains">
+Query for records where the JSON array contains a specific element.
+
+```go
+var result []Param
+// Simple contains query (MySQL, SQLite): config contains value "c"
+DB.Where(datatypes.JSONArrayQuery("config").Contains("c")).Find(&result)
+// Result will include Params where Config JSON array includes "c"
+```
+
+To query nested arrays inside keys:
+
+```go
+// Only MySQL and SQLite support keys for path inside JSON
+DB.Where(datatypes.JSONArrayQuery("config").Contains("a", "test")).Find(&result)
+// Matches records where 'config' JSON's 'test' key's array contains "a"
+```
+
+PostgreSQL supports only the top-level key containment check, not nested array queries.
+</Step>
+
+<Step title="Step 4: Query with JSONArrayQuery In Method">
+Check if any of the specified values exists in the JSON array.
+
+```go
+var result []Param
+// MySQL and SQLite support this full query
+DB.Where(datatypes.JSONArrayQuery("config").In([]string{"c", "a"})).Find(&result)
+// Returns records where 'config' array has "c" or "a"
+
+// With nested key
+DB.Where(datatypes.JSONArrayQuery("config").In([]string{"c", "d"}, "test")).Find(&result)
+```
+
+Note: `In()` is not supported for PostgreSQL.
+</Step>
+
+<Step title="Step 5: Verify Results">
+Check that the filtered results match your query intentions.
+
+- The returned records should only include those where the JSON array contains the specified items.
+- For nested queries, verify that the key path exists and the desired value is present.
+
+Example:
+
+```go
+for _, param := range result {
+  fmt.Printf("Matched Letters: %s, Config: %s\n", param.Letters, param.Config)
+}
+```
+</Step>
+</Steps>
+
+---
+
+## Practical Code Example
+
+```go
+package main
+
+import (
+  "fmt"
+  "gorm.io/driver/mysql"
+  "gorm.io/gorm"
+  "gorm.io/datatypes"
+)
+
+type Param struct {
+  ID      int
+  Letters string
+  Config  datatypes.JSON
+}
+
+func main() {
+  dsn := "user:password@tcp(localhost:3306)/dbname?charset=utf8mb4&parseTime=True&loc=Local"
+  db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{})
+  if err != nil {
+    panic(err)
+  }
+
+  db.AutoMigrate(&Param{})
+
+  // Insert sample data
+  db.Create(&Param{Letters: "JSONArray-1", Config: datatypes.JSON("[\"a\", \"b\"]")})
+  db.Create(&Param{Letters: "JSONArray-2", Config: datatypes.JSON("[\"a\", \"c\"]")})
+
+  var params []Param
+  // Query params where JSON array contains "c"
+  db.Where(datatypes.JSONArrayQuery("config").Contains("c")).Find(&params)
+
+  for _, p := range params {
+    fmt.Printf("Found record: ID=%d, Letters=%s, Config=%s\n", p.ID, p.Letters, p.Config)
+  }
+}
+```
+
+---
+
+## Best Practices
+- Use strongly typed JSON structures where possible in your Go models, but note that JSON array querying helpers target `datatypes.JSON` columns.
+- Verify database support before using nested `keys` parameters, as they are not supported in PostgreSQL.
+- For SQLite, ensure that your build supports the `json1` extension.
+- Combine multiple JSON queries using GORM’s `Where` chaining to build complex filters.
+
+---
+
+## Common Pitfalls and Troubleshooting
+
+<AccordionGroup title="Troubleshooting Tips">
+<Accordion title="Query Returns No Results">
+- Confirm your JSON data is stored as a valid array, not an object.
+- Verify that the database supports JSON array querying for your dialect.
+- Check the path keys you use for nested queries – unsupported paths will silently fail to match.
+</Accordion>
+<Accordion title="SQLite Queries Fail with JSON Functions">
+- Ensure you build SQLite with the `json1` extension (`go build --tags json1`).
+- Validate the JSON data is formatted and stored correctly.
+</Accordion>
+<Accordion title="Multiple Keys Not Supported in PostgreSQL">
+- PostgreSQL only supports basic top-level key containment checks.
+- For nested JSON array queries, consider restructuring your schema or client-side filtering.
+</Accordion>
+</AccordionGroup>
+
+---
+
+## Next Steps & Related Guides
+- [Using JSON Columns Across Different Databases](/guides/core-data-types/using-json-columns): Learn about JSON column setup and key existence/value queries.
+- [Safely Updating JSON Fields In-Place](/guides/advanced-json-patterns/atomic-json-update): Explore atomic updates for JSON fields.
+- [Strongly-Typed JSON and Array Columns](/guides/advanced-json-patterns/typed-json-slices): Understand type safety with JSONType[T] and JSONSlice[T].
+- [Configure Your Project for GORM Data Types](/getting-started/first-usage/configure-project): Setup foundational project settings for GORM Data Types.
+
+For deeper understanding, review core JSON querying methods in [JSON Query Helpers](/api-reference/advanced-operations/json-query-helpers).
+
+---
+
+## Summary
+This guide has equipped you with practical knowledge on how to query and filter JSON arrays within GORM Data Types using `JSONArrayQuery` expressions. You learned how to construct containment and membership queries with support for nested JSON keys where applicable, maximize cross-database compatibility, and troubleshoot common issues.
+
+Harness these techniques to build powerful, flexible queries against your JSON array data stored in SQL databases.
+
+---
+
+### Reference: Supported SQL Dialects
+| Database   | JSONArray Contains | JSONArray Contains with Keys | JSONArray In |
+|------------|--------------------|------------------------------|--------------|
+| MySQL      | Yes                | Yes                          | Yes          |
+| SQLite     | Yes                | Yes                          | Yes          |
+| PostgreSQL | Limited (top-level) | No                           | No           |
+
+---
+
+For complete code examples and advanced JSON capabilities, see the official [GORM Data Types GitHub repository](https://github.com/go-gorm/datatypes).
