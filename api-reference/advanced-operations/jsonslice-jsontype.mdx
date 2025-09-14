@@ -1,0 +1,281 @@
+---
+title: "JSONSlice[T] and JSONType[T]"
+description: "Reference for working with the JSONSlice and JSONType generics—advanced types for mapping Go structs and slices seamlessly to/from JSON database columns. Details constructors, serialization mechanisms, and update semantics, including scenarios where query methods are not supported."
+---
+
+# JSONSlice[T] and JSONType[T]
+
+This reference page provides comprehensive details on using `JSONSlice[T]` and `JSONType[T]`, generic data types designed for mapping Go structs and slices seamlessly to and from JSON columns in SQL databases via GORM. These advanced types offer type safety and serialization features, enabling you to work with strongly typed JSON data effortlessly in your Go models.
+
+---
+
+## Overview
+
+`JSONType[T]` and `JSONSlice[T]` are generic wrappers tailored for JSON-encoded data storage in SQL databases, supported across MySQL, PostgreSQL, and SQLite (with `json1` extension). They provide the following capabilities:
+
+- **Type Safety:** Work with strongly typed Go structs (`JSONType[T]`) or slices (`JSONSlice[T]`) instead of raw `[]byte`.
+- **Seamless Serialization:** Automatically marshal and unmarshal data to/from JSON when saving or retrieving from databases.
+- **Database Compatibility:** Respect database-specific JSON column types (`JSON`, `JSONB`) and casting semantics.
+
+> Note: These generic types do _not_ support JSON querying via helper methods like `HasKey`, `Equals` or `Likes`. For full JSON query support, use the basic `datatypes.JSON` or `datatypes.JSONMap` types.
+
+---
+
+## Using `JSONType[T]`
+
+`JSONType[T]` is designed for generic JSON objects encoded as a Go struct or map.
+
+### Defining and Creating
+
+```go
+import "gorm.io/datatypes"
+
+type Attribute struct {
+    Sex   int
+    Age   int
+    Orgs  map[string]string
+    Tags  []string
+    Admin bool
+    Role  string
+}
+
+type UserWithJSON struct {
+    gorm.Model
+    Name       string
+    Attributes datatypes.JSONType[Attribute]
+}
+
+user := UserWithJSON{
+    Name: "hello",
+    Attributes: datatypes.NewJSONType(Attribute{
+        Age:  18,
+        Sex:  1,
+        Orgs: map[string]string{"orga": "orga"},
+        Tags: []string{"tag1", "tag2", "tag3"},
+    }),
+}
+```
+
+### CRUD Operations
+
+```go
+// Create record
+DB.Create(&user)
+
+// Retrieve
+var result UserWithJSON
+DB.First(&result, user.ID)
+
+// Update
+jsonMap := UserWithJSON{
+    Attributes: datatypes.NewJSONType(Attribute{
+        Age:  19,
+        Sex:  1,
+        Orgs: map[string]string{"orga": "neworg"},
+        Tags: []string{"tag1", "tag2"},
+    }),
+}
+DB.Model(&user).Updates(jsonMap)
+```
+
+### Important Notes
+
+- `JSONType[T]` implements `driver.Valuer` and `sql.Scanner` to integrate seamlessly with GORM.
+- JSON marshaling/unmarshaling happens automatically reflecting the type `T`.
+- It is _not_ supported for JSON query helpers like `datatypes.JSONQuery`.
+
+---
+
+## Using `JSONSlice[T]`
+
+`JSONSlice[T]` is tailored for JSON-encoded slices (arrays) mapped to Go slices of type `T`.
+
+### Defining and Creating
+
+```go
+import "gorm.io/datatypes"
+
+type Tag struct {
+    Name  string
+    Score float64
+}
+
+type UserWithJSON struct {
+    gorm.Model
+    Name string
+    Tags datatypes.JSONSlice[Tag]
+}
+
+var tags = []Tag{{Name: "tag1", Score: 0.1}, {Name: "tag2", Score: 0.2}}
+user := UserWithJSON{
+    Name: "hello",
+    Tags: datatypes.NewJSONSlice(tags),
+}
+```
+
+### CRUD Operations
+
+```go
+// Create a new user record
+DB.Create(&user)
+
+// Retrieve
+var result UserWithJSON
+DB.First(&result, user.ID)
+
+// Update
+var updatedTags = []Tag{{Name: "tag3", Score: 10.1}, {Name: "tag4", Score: 10.2}}
+jsonMap := UserWithJSON{
+    Tags: datatypes.NewJSONSlice(updatedTags),
+}
+DB.Model(&user).Updates(jsonMap)
+```
+
+### Important Notes
+
+- Like `JSONType[T]`, it fully supports GORM integration through `driver.Valuer` and `sql.Scanner`.
+- It serializes Go slices into JSON arrays transparently.
+- Does not support JSON-based queries (`HasKey`, `Equals`, or `Likes`) nor supports the `db.Pluck` method.
+
+---
+
+## Serialization and Database Representation
+
+Both `JSONType[T]` and `JSONSlice[T]` implement the following:
+
+- `Value() (driver.Value, error)`: Marshals the Go data into JSON bytes for database storage.
+- `Scan(value interface{}) error`: Unmarshals bytes from the database into Go types.
+- `MarshalJSON()` and `UnmarshalJSON()` for proper JSON serialization in Go.
+- Custom GORM data type metadata:
+  - `GormDataType()` returns type identifier `"json"`.
+  - `GormDBDataType()` returns the appropriate JSON column type per database dialect: `JSON` for MySQL and SQLite, and `JSONB` for PostgreSQL.
+
+### Database Dialect Handling
+
+- **MySQL:** Handles JSON type with casting (except MariaDB which lacks `CAST(? AS JSON)` support).
+- **PostgreSQL:** Uses `JSONB` with efficient binary JSON storage.
+- **SQLite:** Requires building with `json1` extension, stores JSON in `JSON` type columns.
+
+---
+
+## Limitations and Considerations
+
+- **No JSON Query Support:** Unlike raw `datatypes.JSON`, neither `JSONType[T]` nor `JSONSlice[T]` support JSON query helpers such as `datatypes.JSONQuery` methods like `HasKey`, `Equals`, or `Likes`.
+
+- **No `db.Pluck` Support:** These types are incompatible with the `db.Pluck` method which works with non-generic types.
+
+- **Typing vs Flexibility Trade-off:** These generic types emphasize safety and clarity in Go code but reduce the flexibility for JSON field querying.
+
+- **Conversion/Migration:** Use caution when migrating existing data or mixing with untyped JSON columns.
+
+---
+
+## Practical Workflow Example
+
+1. **Define your Go struct or slice type** representing the JSON data.
+2. **Declare model fields** using `JSONType[YourStruct]` or `JSONSlice[YourElementType]`.
+3. **Initialize with `NewJSONType()` or `NewJSONSlice()` helpers** to create instances with data.
+4. **Use GORM `Create`, `First`, `Updates`, and other CRUD operations** normally.
+5. **Avoid JSON query helpers for these fields; use raw JSON if querying needed.**
+
+---
+
+## Code Snippets
+
+<CodeGroup>
+```go
+// JSONType[T] example - Define model and create
+import "gorm.io/datatypes"
+
+type Profile struct {
+    Age    int
+    Active bool
+}
+
+type User struct {
+    gorm.Model
+    Name    string
+    Profile datatypes.JSONType[Profile]
+}
+
+user := User{
+    Name: "Alice",
+    Profile: datatypes.NewJSONType(Profile{Age: 30, Active: true}),
+}
+DB.Create(&user)
+```
+```go
+// JSONSlice[T] example - Define model and query
+import "gorm.io/datatypes"
+
+type Tag struct {
+    Name  string
+    Score float64
+}
+
+type Article struct {
+    gorm.Model
+    Title string
+    Tags  datatypes.JSONSlice[Tag]
+}
+
+var article Article
+DB.First(&article)
+fmt.Println(article.Tags) // Use as normal Go slice
+```
+</CodeGroup>
+
+---
+
+## Troubleshooting
+
+- **Unmarshal errors:** Ensure database column contents are valid JSON matching your Go type.
+- **MariaDB users:** Beware of lack of `CAST(? AS JSON)` support which might affect some advanced JSON operations.
+- **Querying JSON data:** For querying inside JSON, use non-generic `datatypes.JSON` or `datatypes.JSONMap`.
+- **SQLite users:** Build with `json1` tag (e.g., `go build --tags json1`) for JSON functionality.
+
+---
+
+## Next Steps & Related Documentation
+
+- Explore [Using JSON Columns Across Different Databases](/guides/core-data-types/using-json-columns) for query and update patterns.
+- Learn atomic JSON updates with [Safely Updating JSON Fields In-Place](/guides/advanced-json-patterns/atomic-json-update).
+- Use strongly typed slices with [Strongly-Typed JSON and Array Columns](/guides/advanced-json-patterns/typed-json-slices).
+- Consider reading about JSON query helpers in [JSON Query Helpers](/api-reference/advanced-operations/json-query-helpers).
+
+---
+
+## Summary
+
+This document empowers Go developers using GORM to confidently employ generics for JSON data storage, providing both `JSONType[T]` and `JSONSlice[T]` as type-safe solutions with automatic serialization support. It clarifies limitations around querying and best practices for JSON usage in models, ensuring you can design robust, clear, and maintainable applications using advanced JSON data patterns.
+
+---
+
+## Source & Implementation
+
+View the implementation and tests in the official GitHub repository:
+
+<Source url="https://github.com/go-gorm/datatypes" branch="main" paths={[{"path": "json_type.go", "range": "1-104"},{"path": "json_type_test.go", "range": "1-194"}]} />
+
+
+---
+
+## Frequently Asked Questions
+
+<AccordionGroup title="FAQs on JSONSlice[T] and JSONType[T] Usage">
+<Accordion title="Can I perform JSON queries with JSONType[T] or JSONSlice[T]?">
+Currently, these generic types do not support JSON query helpers such as HasKey or Equals. To enable JSON querying, use the `datatypes.JSON` or `datatypes.JSONMap` types instead.
+</Accordion>
+<Accordion title="How does JSONSlice[T] handle database scanning and value setting?">
+It implements the `driver.Valuer` and `sql.Scanner` interfaces, automatically marshaling slices to JSON when saving, and unmarshaling JSON from database values when loading.
+</Accordion>
+<Accordion title="What databases support these generic types?">
+MySQL, PostgreSQL, and SQLite (with `json1` extension) fully support storing JSON data with these types. Be cautious with MariaDB due to JSON casting limitations.
+</Accordion>
+<Accordion title="How do I migrate an existing database column to use JSONType[T]?">
+Ensure the column is a JSON or JSONB compatible type. Update your model field to the generic JSONType[T], then run migrations. Validate JSON format compatibility across your app.
+</Accordion>
+</AccordionGroup>
+
+
+
