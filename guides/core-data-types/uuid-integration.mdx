@@ -1,0 +1,257 @@
+---
+title: "Integrating UUID Fields for Uniqueness"
+description: "A practical guide to generating, storing, and comparing UUIDs as primary keys or fields in your models. Covers best practices for ensuring uniqueness, converting to and from strings, and integrating UUID workflows in different SQL backends."
+---
+
+# Integrating UUID Fields for Uniqueness
+
+## Overview
+This guide helps you seamlessly generate, store, and compare UUIDs in your Go models using GORM Data Types. You will learn how to leverage UUIDs as primary keys or fields to ensure global uniqueness, handle UUIDs across supported SQL backends (MySQL, PostgreSQL, SQLite, SQL Server), and adopt best practices to maintain data integrity and efficient querying.
+
+## Prerequisites
+- Basic familiarity with GORM ORM for Go
+- GORM Data Types module installed and configured ([Installation guide](../getting-started/setup-basics/install-gorm-datatypes))
+- Connection setup to a supported SQL database (MySQL, PostgreSQL, SQLite with json1, or SQL Server) ([Configure your project guide](../getting-started/first-usage/configure-project))
+
+## Expected Outcome
+- You will be able to generate UUIDs v1 and v4 for your entities
+- Define UUID fields in your GORM models and migrate your schema
+- Create records with UUIDs, query them correctly, and verify uniqueness
+- Understand how to compare, convert, and check UUID values
+
+## Time Estimate
+About 10-15 minutes to implement and test UUID integration in a simple model
+
+## Difficulty Level
+Beginner to Intermediate
+
+---
+
+## Step-by-Step Instructions
+
+### 1. Define a Model with a UUID Field
+Start by importing the `datatypes` package and define your model including a UUID field:
+
+```go
+import "gorm.io/datatypes"
+import "gorm.io/gorm"
+
+type UserWithUUID struct {
+    gorm.Model
+    Name     string
+    UserUUID datatypes.UUID
+}
+```
+
+This model adds a `UserUUID` field of type `datatypes.UUID` which supports integration with supported databases.
+
+---
+
+### 2. Generate UUIDs
+GORM Data Types provide two commonly used UUID versions:
+- **UUIDv1**: Time-based UUIDs
+- **UUIDv4**: Random UUIDs
+
+Generate UUIDs using:
+
+```go
+userUUIDv1 := datatypes.NewUUIDv1()
+userUUIDv4 := datatypes.NewUUIDv4()
+```
+
+Use the appropriate version based on your application's uniqueness and traceability requirements.
+
+---
+
+### 3. Create Records Using UUIDs
+Example of creating a user with a UUID:
+
+```go
+user := UserWithUUID{
+    Name:     "jinzhu",
+    UserUUID: userUUIDv4,
+}
+err := DB.Create(&user).Error
+if err != nil {
+    // handle error
+}
+```
+
+After this, the `UserUUID` field will be stored correctly in your SQL backend as a UUID or string, based on the database dialect:
+
+| Database   | Stored As     |
+|------------|---------------|
+| PostgreSQL | native UUID   |
+| MySQL      | LONGTEXT      |
+| SQLite     | TEXT          |
+| SQL Server | NVARCHAR(128) |
+
+---
+
+### 4. Query Records by UUID
+To retrieve the record based on a UUID value, use a GORM query with the UUID object:
+
+```go
+var result UserWithUUID
+err := DB.First(&result, "name = ? AND user_uuid = ?", "jinzhu", userUUIDv4).Error
+if err != nil {
+    // handle not found or other errors
+}
+```
+
+This ensures that the UUID matches precisely across your database.
+
+---
+
+### 5. Compare UUIDs
+To verify if two UUID values are equal, use the `Equals()` method:
+
+```go
+if user.UserUUID.Equals(result.UserUUID) {
+    fmt.Println("UUIDs match.")
+} else {
+    fmt.Println("UUIDs do not match.")
+}
+```
+
+This method compares UUIDs by their string representation ensuring precise equality.
+
+---
+
+### 6. Work with UUID Strings
+To convert UUIDs to string format (for logging, display, or external use), use:
+
+```go
+uuidString := user.UserUUID.String()
+fmt.Println("User UUID as string:", uuidString)
+```
+
+To convert from string back to a UUID type, use `uuid.MustParse` from the `github.com/google/uuid` package or create new UUIDs with provided helpers.
+
+---
+
+### 7. Validate UUIDs for Nil or Empty Values
+GORM Data Types provide helper methods:
+
+- `IsNil()`: Returns true if UUID is a nil UUID (all bits zero)
+- `IsEmpty()`: Returns true if UUID is nil or has zero length
+
+Example:
+
+```go
+if user.UserUUID.IsNil() {
+    fmt.Println("UUID is nil")
+}
+if user.UserUUID.IsEmpty() {
+    fmt.Println("UUID is empty")
+}
+```
+
+These checks help prevent storing invalid or unset UUIDs.
+
+---
+
+### 8. Updating UUID Fields
+Update UUID fields using the UUID object directly in GORM's update or model update calls:
+
+```go
+tx := DB.Model(&user).Updates(map[string]interface{}{"user_uuid": datatypes.NewUUIDv4()})
+if tx.Error != nil {
+    // handle error
+}
+```
+
+This action updates the stored UUID value safely and correctly across supported databases.
+
+---
+
+## Practical Tips & Best Practices
+- **Choose UUID version wisely**: Use v1 to encode time and node info; use v4 for random uniqueness without embedded info.
+- **Use UUIDs as primary keys where global uniqueness is needed** across distributed systems.
+- **Always use `Equals()` method for UUID comparison** instead of direct struct comparison.
+- **Check for nil/empty before inserts or updates** to avoid accidental null UUIDs.
+- **Remember UUIDs are stored as strings except in PostgreSQL** where native UUID type saves space and improves performance.
+- **For nullable UUIDs**, use pointers to `datatypes.UUID` to differentiate nil from zero value.
+
+---
+
+## Common Pitfalls & Troubleshooting
+
+<AccordionGroup title="Troubleshooting UUID Integration">
+<Accordion title="UUID field not saving or defaulting to empty string">
+Ensure you are using `datatypes.UUID` type for your model field and not a plain string. Also, verify your DB supports UUID or string fields and the migration ran without errors.
+</Accordion>
+<Accordion title="Query by UUID returns no results even when value exists">
+Check that the UUID value used in the query matches the stored representation exactly. Use the same `datatypes.UUID` value or convert from string before querying. Avoid mismatching types.
+</Accordion>
+<Accordion title="Problems updating UUID fields to nil or empty values">
+Use the special `uuid.Nil` value or pass `nil` pointer to clear a UUID field correctly. Confirm database constraints allow nullable UUID fields.
+</Accordion>
+<Accordion title="UUID comparison fails unexpectedly">
+Always use the `.Equals()` method to compare UUIDs instead of `==`. String conversion comparison handles possible formatting differences.
+</Accordion>
+</AccordionGroup>
+
+---
+
+## Example Usage
+
+```go
+package main
+
+import (
+    "fmt"
+    "gorm.io/driver/sqlite"
+    "gorm.io/gorm"
+    "gorm.io/datatypes"
+)
+
+type Product struct {
+    gorm.Model
+    SKU   string
+    ProdUUID datatypes.UUID
+}
+
+func main() {
+    db, err := gorm.Open(sqlite.Open("test.db"), &gorm.Config{})
+    if err != nil {
+        panic(err)
+    }
+
+    // Migrate the schema
+    db.AutoMigrate(&Product{})
+
+    // Create record with UUIDv4
+    newUUID := datatypes.NewUUIDv4()
+    prod := Product{SKU: "ABC123", ProdUUID: newUUID}
+    db.Create(&prod)
+
+    // Query by UUID
+    var result Product
+    db.First(&result, "prod_uuid = ?", newUUID)
+
+    fmt.Printf("Retrieved product with UUID: %s\n", result.ProdUUID.String())
+
+    // Check if UUID matches
+    if prod.ProdUUID.Equals(result.ProdUUID) {
+        fmt.Println("UUID matched successfully!")
+    }
+}
+```
+
+---
+
+## Next Steps & Related Guides
+- Explore how to integrate UUID types alongside **JSON columns** and **date/time fields** for richer models ([Using JSON Columns Across Different Databases](../guides/core-data-types/using-json-columns), [Storing and Querying Date and Time Fields](../guides/core-data-types/working-with-date-time))
+- Refer to **Setup & Configuration** for environment preparation ([Install GORM Data Types](../../getting-started/setup-basics/install-gorm-datatypes), [Configure Your Project](../../getting-started/first-usage/configure-project))
+- For advanced update patterns, check out **atomic JSON updates** and sophisticated queries
+
+---
+
+## Resources
+- [GORM Data Types GitHub Repository](https://github.com/go-gorm/datatypes)
+- [Getting Started with GORM](https://gorm.io/docs/index.html)
+
+---
+
+This guide empowers you to implement UUIDs confidently, securing unique identifiers efficiently across your SQL databases with GORM Data Types.
