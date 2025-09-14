@@ -1,0 +1,195 @@
+---
+title: "Date Type"
+description: "Describes the Date struct for storing date values independent of time zones in your models. Includes supported database types, typical usage, notable behaviors, and date comparisons. Covers handling leap years, date arithmetic, and retrieval with GORM’s query mechanisms."
+---
+
+# Date Type
+
+The `Date` type in GORM Data Types offers a robust solution for storing and managing date-only values within your models, entirely independent of time zones or time components. This data type ensures consistent handling of dates such as birthdays, anniversaries, or any other scenarios where the time of day is irrelevant. This documentation guides you through the usage, behavior, and best practices for integrating `datatypes.Date` into your GORM-powered Go applications.
+
+---
+
+## Overview
+
+`datatypes.Date` represents a calendar date stripped of time information. Internally, it wraps Go's standard `time.Time` but ensures the time portion is normalized to midnight (00:00:00), effectively isolating the date component.
+
+This design guarantees that storing and querying dates behave consistently across supported SQL databases without unexpected timezone or time shifts, making it ideal for date-only fields.
+
+### Supported Databases
+
+- **MySQL**
+- **PostgreSQL**
+- **SQLite**
+- **SQL Server**
+
+The type is compatible with GORM's AutoMigrate mechanism, translating into the corresponding SQL `DATE` column type.
+
+
+## Defining and Using `datatypes.Date`
+
+To use the `Date` type, import the package and declare it in your GORM model structs.
+
+```go
+import (
+  "time"
+  "gorm.io/datatypes"
+)
+
+type UserWithDate struct {
+  gorm.Model
+  Name string
+  Date datatypes.Date
+}
+
+// Create a new record with today’s date
+user := UserWithDate{Name: "jinzhu", Date: datatypes.Date(time.Now())}
+DB.Create(&user)
+
+// Query by date value
+var result UserWithDate
+DB.First(&result, "name = ? AND date = ?", "jinzhu", datatypes.Date(time.Now()))
+```
+
+### Key Behaviors
+
+- The date is stored with the time fixed to midnight in the local location.
+- The time component is zeroed out during value conversion to prevent unexpected time values.
+- Serialization and deserialization for JSON and Gob encode/decode properly preserve the date without time details.
+
+
+## Detailed Behavior and Implementation Notes
+
+The `Date` type provides the following important methods:
+
+- **Scan and Value interfaces:**
+  - Implements `sql.Scanner` to read date data from database queries, using `sql.NullTime` internally.
+  - Implements `driver.Valuer` to write date data back to the database with time zeroed.
+
+- **GormDataType and GormDBDataType:**
+  - Informs GORM’s schema builder to use `date` types for the field across supported databases.
+
+- **Marshalling:**
+  - Handles JSON marshaling/unmarshaling ensuring date-only format is maintained.
+
+
+## Handling Leap Years and Date Arithmetic
+
+While `datatypes.Date` focuses on storage and representation, you can freely use Go's native `time.Time` methods on the underlying `time.Time` value for date arithmetic and leap year logic.
+
+For example, you can convert to `time.Time` and operate with `AddDate` or `Before` methods:
+
+```go
+// Cast datatypes.Date to time.Time
+nativeTime := time.Time(user.Date)
+
+// Add one day
+nextDay := nativeTime.AddDate(0, 0, 1)
+
+// Compare dates
+if nativeTime.Before(nextDay) {
+  // logic
+}
+```
+
+
+## Querying and Filtering
+
+You can query date fields with GORM expressions targeting exact days, ranges, or conditions:
+
+```go
+// Find all users with birthdays on a specific day
+DB.Where("date = ?", datatypes.Date(time.Date(1990, 2, 28, 0, 0, 0, 0, time.UTC))).Find(&users)
+
+// Query users before a certain date
+DB.Where("date < ?", datatypes.Date(time.Now())).Find(&pastUsers)
+```
+
+
+## Serialization and Compatibility
+
+`datatypes.Date` supports standard JSON marshaling and unmarshaling formats that clients and REST APIs expect, making it seamless for inter-service communications.
+
+It also supports Gob encoding, which is useful for caching or passing data between Go applications.
+
+
+## Best Practices
+
+- Always use `datatypes.Date` for date-only columns to avoid timezone and time component issues.
+- When comparing dates, convert `datatypes.Date` to `time.Time` to utilize Go’s native date and time functions.
+- Use GORM’s built-in query methods for filtering; the type integrates smoothly with query placeholders.
+- For scenarios requiring time alongside date, consider using `datatypes.Time` or standard `time.Time` explicitly.
+
+
+## Common Pitfalls
+
+- Do not use `time.Time` fields without time zeroing for pure date columns as this may lead to timezone shifts on some databases.
+- Remember that SQLite stores the date as `TEXT`; ensure your queries account for this behavior.
+- Avoid mixing `datatypes.Date` and `time.Time` for the same database field to prevent inconsistent readings or writes.
+
+
+## Example: Full Model and Usage
+
+```go
+package main
+
+import (
+  "fmt"
+  "time"
+  "gorm.io/driver/sqlite"
+  "gorm.io/gorm"
+  "gorm.io/datatypes"
+)
+
+type Event struct {
+  ID        uint
+  Name      string
+  EventDate datatypes.Date
+}
+
+func main() {
+  db, err := gorm.Open(sqlite.Open("test.db"), &gorm.Config{})
+  if err != nil {
+    panic("failed to connect database")
+  }
+
+  db.AutoMigrate(&Event{})
+
+  event := Event{
+    Name:      "GORM Anniversary",
+    EventDate: datatypes.Date(time.Date(2024, 6, 15, 0, 0, 0, 0, time.UTC)),
+  }
+
+  db.Create(&event)
+
+  var result Event
+  db.First(&result, "event_date = ?", datatypes.Date(time.Date(2024, 6, 15, 0, 0, 0, 0, time.UTC)))
+
+  fmt.Printf("Event: %s on Date: %s\n", result.Name, time.Time(result.EventDate).Format("2006-01-02"))
+}
+```
+
+
+## Troubleshooting
+
+<AccordionGroup title="Common Issues and Solutions with datatypes.Date">
+<Accordion title="Date Stored With Unexpected Time Part">
+Make sure you use `datatypes.Date` instead of `time.Time` to avoid retained time portions. Also, verify the database column type is DATE.
+</Accordion>
+<Accordion title="Queries Against Date Column Not Returning Expected Results">
+Ensure you use `datatypes.Date` in the query and not raw `time.Time`, to align with zeroed time and date-only values.
+</Accordion>
+<Accordion title="Compatibility with AutoMigrate">
+If AutoMigrate generates an unexpected column type, check your GORM and datatypes version; ensure you use a supported database, and confirm your dialect supports `DATE`.
+</Accordion>
+</AccordionGroup>
+
+
+---
+
+For more information and related advanced usage, visit the following sections:
+
+- [Working with Date and Time Fields](../guides/core-data-types/working-with-date-time)
+- [GORM JSON Type](../api-reference/core-data-types/json-type)
+- [Time Type](../api-reference/core-data-types/time-type)
+
+---
