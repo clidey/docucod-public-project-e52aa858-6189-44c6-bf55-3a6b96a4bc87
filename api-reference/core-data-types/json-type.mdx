@@ -1,0 +1,296 @@
+---
+title: "JSON Type"
+description: "Describes the JSON and JSONType[T] structs for storing and manipulating structured data in GORM models. Includes documentation for JSON queries, updates, JSON_SET, and integration strategies for various databases, highlighting quirks between MySQL, PostgreSQL, and SQLite. Shows usage patterns, constructors, and methods for safe, type-checked JSON persistence."
+---
+
+# JSON Type
+
+The JSON Type page details the `JSON` and `JSONType[T]` data structures provided by GORM Data Types to store and manipulate structured JSON data within GORM models. It also covers advanced JSON query expressions, atomic updates, and integration considerations across major SQL databases (MySQL, PostgreSQL, SQLite), highlighting their inherent quirks and best usage patterns.
+
+---
+
+## Overview
+
+GORM Data Types supports storing JSON-encoded data efficiently and type-safely in your Go models with seamless conversion to/from JSON columns in SQL databases. This page focuses on:
+
+- Basic JSON persistence with `datatypes.JSON`
+- Strongly typed generic JSON storage via `datatypes.JSONType[T]`
+- JSON slice storage with `datatypes.JSONSlice[T]`
+- Advanced JSON query and update helpers for conditionals and atomic in-place JSON field modification (`JSONQuery`, `JSONSet`)
+- Cross-database compatibility nuances and workarounds
+
+By leveraging these types, developers maintain type safety in Go, avoid manual marshaling, and unlock expressive, database-native JSON queries and updates.
+
+## JSON and JSONType[T] Structs
+
+### datatypes.JSON
+
+- A wrapper over raw JSON message (`json.RawMessage`) implementing `driver.Valuer` and `sql.Scanner`
+- Handles database scanning and value marshaling transparently
+- Supports JSON querying using specialized expressions discussed later
+
+Example usage:
+
+```go
+import "gorm.io/datatypes"
+
+type UserWithJSON struct {
+    gorm.Model
+    Name       string
+    Attributes datatypes.JSON
+}
+
+user := UserWithJSON{
+    Name: "json-1",
+    Attributes: datatypes.JSON([]byte(`{"name": "jinzhu", "age": 18, "tags": ["tag1", "tag2"]}`)),
+}
+DB.Create(&user)
+```
+
+### datatypes.JSONType[T]
+
+- A generic, strongly-typed wrapper to store any Go struct as JSON
+- Safely marshals/unmarshals the generic type `T` to and from JSON
+- Implements driver and scanner interfaces for transparent DB operations
+- Not currently queryable directly via JSON expression methods
+
+Example:
+
+```go
+import "gorm.io/datatypes"
+
+type Attribute struct {
+    Sex   int
+    Age   int
+    Orgs  map[string]string
+    Tags  []string
+    Admin bool
+    Role  string
+}
+
+type UserWithJSON struct {
+    gorm.Model
+    Name       string
+    Attributes datatypes.JSONType[Attribute]
+}
+
+user := UserWithJSON{
+    Name: "hello",
+    Attributes: datatypes.NewJSONType(Attribute{
+        Age:  18,
+        Sex:  1,
+        Orgs: map[string]string{"orga": "orga"},
+        Tags: []string{"tag1", "tag2", "tag3"},
+    }),
+}
+DB.Create(&user)
+```
+
+You can retrieve `Attributes.Data()` to access the typed struct.
+
+### datatypes.JSONSlice[T]
+
+- Like `JSONType[T]`, but tailored for slices of type `T`
+- Enables storing typed arrays as JSON in the database
+- Does not support JSON querying or `db.Pluck`
+
+Example:
+
+```go
+import "gorm.io/datatypes"
+
+type Tag struct {
+    Name  string
+    Score float64
+}
+
+type UserWithJSON struct {
+    gorm.Model
+    Name string
+    Tags datatypes.JSONSlice[Tag]
+}
+
+tags := []Tag{{Name: "tag1", Score: 0.1}, {Name: "tag2", Score: 0.2}}
+user := UserWithJSON{
+    Name: "hello",
+    Tags: datatypes.NewJSONSlice(tags),
+}
+DB.Create(&user)
+```
+
+## Cross-Database Data Type Mapping
+
+All JSON types map appropriately for the underlying database dialect:
+
+| Dialect  | JSON Type in Database          |
+|----------|-------------------------------|
+| MySQL    | `JSON`                        |
+| PostgreSQL | `JSONB` (binary-optimized)  |
+| SQLite   | `JSON` (requires json1 tag)   |
+
+When querying or updating, GORM Data Types apply dialect-specific SQL, such as using `CAST(? AS JSON)` in MySQL (except MariaDB) or `JSONB_SET` functions in PostgreSQL.
+
+<Note>
+SQLite requires building with the `json1` extension (e.g., `go build --tags json1`) for JSON support in queries and updates.
+</Note>
+
+## JSON Queries and Filtering
+
+Use the `JSONQuery` helper to build expressive JSON queries.
+
+### Common JSONQuery Methods:
+
+- `.HasKey(keys...)`: Find records where JSON contains specified key path(s).
+- `.Equals(value, keys...)`: Filter where JSON value at key path equals the specified value.
+- `.Likes(value, keys...)`: Find JSON string values matching a pattern (LIKE query).
+- `.Extract(path)`: Extract part of the JSON with given path (usable as query condition).
+
+### Example Usage:
+
+```go
+DB.Find(&user, datatypes.JSONQuery("attributes").HasKey("role"))
+DB.Find(&user, datatypes.JSONQuery("attributes").Equals("jinzhu", "name"))
+DB.First(&user, datatypes.JSONQuery("attributes").Likes("%admin%", "role"))
+```
+
+The actual SQL generated varies by database:
+
+- **MySQL/SQLite:** JSON functions like `JSON_EXTRACT` and `JSON_CONTAINS`
+- **PostgreSQL:** JSONB operators like `?`, `->`, and `json_extract_path_text`
+
+### JSONArrayQuery
+
+Supports array-specific queries such as `.Contains()` and `.In()` for checking values inside JSON arrays.
+
+Example:
+```go
+DB.Where(datatypes.JSONArrayQuery("config").Contains("c")).Find(&params)
+```
+
+Supported in MySQL and SQLite, with limited PostgreSQL capabilities.
+
+## Atomic JSON Updates with JSONSet
+
+`JSONSet` enables atomic, in-place updates to JSON columns without overwriting the entire JSON object.
+
+- Supports complex updates including nested keys and array elements.
+- Handles dialect differences:
+  - MySQL/SQLite use `JSON_SET` function
+  - PostgreSQL uses nested `JSONB_SET` calls
+
+### Usage Pattern:
+
+```go
+datatypes.JSONSet("attributes").Set("age", 20).Set("tags[0]", "tag2").Set("orgs.orga", "orgb")
+
+DB.Model(&User{}).Where("name = ?", "json-1").UpdateColumn("attributes",
+    datatypes.JSONSet("attributes").Set("age", 20).Set("tags[0]", "tag3").Set("orgs.orga", "orgb"))
+```
+
+Paths differ by dialect:
+
+- **MySQL/SQLite:** Dot/bracket notation like `tags[0]`, `orgs.orga`
+- **PostgreSQL:** Array-style paths like `{tags,0}`, `{orgs,orga}`
+
+### Important Notes:
+
+- MariaDB does **not** support `CAST(? AS JSON)`, so some casting behaviors differ.
+- You can use raw expressions (like `gorm.Expr`) as values for advanced updates.
+
+## Constructors and Methods
+
+### JSONType[T]
+
+- `NewJSONType(data T) JSONType[T]`: Create a new instance from value.
+- `.Data() T`: Retrieve the underlying data.
+
+### JSONSlice[T]
+
+- `NewJSONSlice(slice []T) JSONSlice[T]`: Create from slice.
+
+Both types implement:
+- `Value() (driver.Value, error)`: For DB write
+- `Scan(interface{}) error`: For DB read
+- `MarshalJSON() ([]byte, error)` and `UnmarshalJSON([]byte) error`: JSON serialization
+
+## Common Pitfalls & Best Practices
+
+<Tip>
+- Ensure your database and driver versions support JSON functions (`json1` extension for SQLite, proper versions of MySQL and PostgreSQL).
+- When using `JSONType[T]` or `JSONSlice[T]`, know that native GORM JSON querying helpers (`JSONQuery`) do **not** support these generic types directly.
+- Prefer atomic updates (`JSONSet`) to avoid overwriting entire JSON columns, reducing risks in concurrent writes.
+- Always test database-specific behaviors, especially around paths and casting.
+- Beware of MariaDB's incompatibility with `CAST(? AS JSON)` when using JSON updates.
+</Tip>
+
+## Troubleshooting
+
+<Warning>
+- Query expressions might behave differently across databases. If a `HasKey` or `Equals` query returns unexpected results, verify JSON paths and the dialect-specific SQL.
+- On SQLite, missing `json1` tag build will cause JSON query functions to fail.
+- Trying to pluck from `JSONSlice[T]` is unsupported and may error.
+- MariaDB users should avoid JSON casting in updates; this may require workarounds.
+</Warning>
+
+## Summary of Supported Databases
+
+| Feature             | MySQL                       | PostgreSQL                     | SQLite (with json1)           |
+|---------------------|-----------------------------|-------------------------------|------------------------------|
+| JSON Column Type    | `JSON`                      | `JSONB`                       | `JSON` (TEXT with JSON1 ext)  |
+| Query Support       | JSON_EXTRACT, JSON_CONTAINS | `?`, `->`, json_extract_path  | JSON_EXTRACT & friends       |
+| Atomic Updates      | JSON_SET + CAST for JSON    | JSONB_SET nested calls        | JSON_SET + JSON(? expr)      |
+| JSONType[T] Support | Yes (no query support)      | Yes (no query support)        | Yes (no query support)        |
+
+---
+
+## Additional Examples
+
+### Simple JSON Query
+
+```go
+var user UserWithJSON
+DB.First(&user, datatypes.JSONQuery("attributes").HasKey("orgs", "orga"))
+```
+
+### Atomic JSON Updates
+
+```go
+DB.Model(&UserWithJSON{}).Where("name = ?", "json-1").UpdateColumn(
+    "attributes",
+    datatypes.JSONSet("attributes").Set("age", 20).Set("tags[0]", "tag3").Set("orgs.orga", "orgb"))
+```
+
+### Using JSONType[T]
+
+```go
+user.Attributes = datatypes.NewJSONType(Attribute{
+    Age: 21,
+    Orgs: map[string]string{"orgc": "value"},
+})
+DB.Save(&user)
+```
+
+---
+
+For advanced JSON operations, consider combining this page's tools with the guides on atomic JSON updates and JSON array queries for full control over JSON persistence in your application.
+
+---
+
+## References
+
+- [GORM Data Types GitHub Repository](https://github.com/go-gorm/datatypes)
+- [Using JSON Columns Across Different Databases](../guides/core-data-types/using-json-columns)
+- [Safely Updating JSON Fields In-Place (JSONSet)](../guides/advanced-json-patterns/atomic-json-update)
+- [Strongly-Typed JSON and Array Columns](../guides/advanced-json-patterns/typed-json-slices)
+- [Querying and Filtering JSON Arrays](../guides/advanced-json-patterns/jsonarray-queries)
+- [Prerequisites & System Requirements](../../getting-started/setup-basics/prerequisites)
+
+---
+
+## See Also
+
+- JSON Query Helpers: explores richer querying capabilities for JSON columns.
+- JSON Mutation (Update) Helpers: in-depth usage of `JSONSet` and atomic updates.
+- JSONSlice[T] and JSONType[T]: advanced patterns around generic JSON data types.
+
+---
