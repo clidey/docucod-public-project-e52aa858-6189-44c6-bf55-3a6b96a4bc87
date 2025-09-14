@@ -1,0 +1,174 @@
+---
+title: "Why Use GORM Data Types?"
+description: "Understand the key reasons developers adopt GORM Data Types: robust cross-database type support (JSON, Date, Time, UUID), type-safe operations, expressive queries, and transparent integration with existing GORM workflows. Explore how it simplifies data modeling and querying for complex applications, unifying type management across multiple database engines."
+---
+
+# Why Use GORM Data Types?
+
+## Empower Your GORM Models with Robust, Cross-Database Data Types
+
+GORM Data Types extend the power of GORM by introducing strong, expressive types like JSON, Date, Time, UUID, and more, all built for seamless integration and maximum flexibility across popular SQL databases such as MySQL, PostgreSQL, SQLite, and SQL Server. This means you can model your complex data naturally in Go, without worrying about database compatibility, query expressiveness, or cumbersome conversions.
+
+### Key Reasons to Choose GORM Data Types
+
+- **Unified Cross-Database Support:** Work with advanced SQL data types like JSON, Date, Time, and UUID transparently across multiple database engines. Write once, run anywhere.
+- **Type-Safe Operations:** Leverage Go's strong typing through generics for JSON objects and slices, eliminating runtime errors and simplifying your data handling.
+- **Expressive and Flexible Queries:** Use intuitive JSON query helpers to filter and manipulate nested JSON fields directly within your database queries.
+- **Seamless GORM Integration:** Incorporate advanced types effortlessly within existing GORM workflows — from migrations to CRUD operations — without additional boilerplate or complexity.
+- **Simplified Data Modeling:** Avoid repetitive manual parsing or bespoke serialization logic; encapsulate complex data in elegant types backed by tested implementations.
+
+### Who Benefits Most?
+
+GORM Data Types are ideal for Go developers building applications that demand advanced data structures in relational databases — whether you're maintaining complex JSON configurations, tracking precise dates and times, or generating unique UUID identifiers.
+
+---
+
+## What You Gain by Using GORM Data Types
+
+### 1. Enhanced Cross-Database Compatibility
+
+GORM Data Types abstract away many database-specific quirks and differences, allowing you to:
+
+- Consistently use `JSON` or `JSONB` depending on your database.
+- Work with robust `UUID` and binary UUID (`BinUUID`) fields across MySQL, PostgreSQL, SQL Server, and SQLite.
+- Store dates and times with proper formatting and query capabilities.
+
+This ensures your application can switch between supported databases without rewriting your model layers or query logic.
+
+### 2. Strongly-Typed JSON Support with Generics
+
+Use `JSONType[T]` and `JSONSlice[T]` to model your JSON columns with strong typing — eliminating unsafe `map[string]interface{}` and manual marshaling. This feature supports:
+
+- Defining Go structs or slices and storing them directly as JSON columns.
+- Direct unmarshalling to Go types when querying, simplifying data consumption.
+- Creation and update operations that work naturally with these typed structs.
+
+### 3. Powerful and Convenient JSON Queries
+
+With `JSONQuery()`, you can build expressive queries targeting JSON fields, such as checking if keys exist or if nested values match, with syntax tailored for each supported dialect. Examples include:
+
+```go
+// Find users where attribute 'role' exists
+DB.Find(&users, datatypes.JSONQuery("attributes").HasKey("role"))
+
+// Find users where nested JSON value matches
+DB.First(&user, datatypes.JSONQuery("attributes").Equals("admin", "role"))
+```
+
+### 4. In-Place, Atomic JSON Field Updates
+
+Update individual keys inside JSON columns without overwriting the entire field using `JSONSet()`. This minimizes write contention and improves efficiency:
+
+```go
+DB.Model(&User{}).
+  Where("name = ?", "json-1").
+  UpdateColumn("attributes", datatypes.JSONSet("attributes").
+    Set("age", 20).
+    Set("tags[0]", "new-tag"))
+```
+
+Supported for MySQL, PostgreSQL, and SQLite with dialect-specific syntax handled automatically.
+
+### 5. Versatile UUID Handling
+
+Implement `UUID` and `BinUUID` types with helpers to generate, compare, and validate UUIDs easily:
+
+- Generate new UUIDs (v1, v4 versions) with `datatypes.NewUUIDv1()`, `datatypes.NewUUIDv4()`.
+- Safely store and query UUID fields with GORM aware of differences across databases.
+- Use helper methods like `Equals()`, `IsNil()`, and `IsEmpty()` for reliable comparisons.
+
+---
+
+## Real-World Scenarios
+
+### Scenario: Modeling Rich User Profiles With JSON Attributes
+
+Instead of flattening your user model or relying on untyped JSON, you define a strongly-typed struct for user attributes, store it in a typed JSON column, and query on deeply nested properties effortlessly:
+
+```go
+type Attribute struct {
+    Sex   int
+    Age   int
+    Orgs  map[string]string
+    Tags  []string
+    Admin bool
+    Role  string
+}
+
+type UserWithJSON struct {
+    gorm.Model
+    Name       string
+    Attributes datatypes.JSONType[Attribute]
+}
+
+// Create a new user with typed JSON attributes
+user := UserWithJSON{
+    Name: "john-doe",
+    Attributes: datatypes.NewJSONType(Attribute{
+        Age:  30,
+        Admin: true,
+        Tags: []string{"golang", "dev"},
+    }),
+}
+DB.Create(&user)
+
+// Query users who have a specific role
+var admins []UserWithJSON
+DB.Find(&admins, datatypes.JSONQuery("attributes").HasKey("role"))
+```
+
+### Scenario: Incrementally Updating Nested JSON Data
+
+You want to add a new tag or change a user's attribute inside a JSON column without overwriting the entire JSON blob:
+
+```go
+DB.Model(&UserWithJSON{}).
+  Where("name = ?", "john-doe").
+  UpdateColumn("attributes", datatypes.JSONSet("attributes").
+    Set("tags[0]", "devops").
+    Set("age", 31))
+```
+
+---
+
+## Getting Started Preview
+
+**Prerequisites:**
+- Existing GORM setup with a supported database (MySQL, PostgreSQL, SQLite, SQL Server).
+- Basic familiarity with defining GORM models.
+
+**Next Steps:**
+- Visit [Install GORM Data Types](/getting-started/setup-basics/install-gorm-datatypes) to add the library.
+- Explore [Create & Query Data With Advanced Types](/getting-started/first-usage/first-examples) for hands-on examples.
+- Learn JSON querying and atomic updates in [Using JSON Columns Across Different Databases](/guides/core-data-types/using-json-columns) and [Safely Updating JSON Fields In-Place](/guides/advanced-json-patterns/atomic-json-update).
+
+---
+
+## Troubleshooting & Best Practices
+
+- Ensure your database supports JSON data types as some (like SQLite) require special build tags (`json1`) or fallback to TEXT.
+- Use generics for JSONType and JSONSlice to avoid runtime parsing errors.
+- When performing UUID comparisons, always use the datatype's `Equals()` method instead of raw string comparisons.
+- For complex JSON mutations, prefer `JSONSet()` to avoid overwriting entire JSON blobs.
+
+
+---
+
+For examples, detailed API usage, and test coverage references, see the [GORM Data Types GitHub repository](https://github.com/go-gorm/datatypes) and related documentation pages.
+
+---
+
+*Unlock your Go application's data modeling potential with GORM Data Types — expressive, cross-compatible, and developer-friendly.*
+
+---
+
+### Related Documentation Pages
+
+- [What is GORM Data Types?](/overview/introduction-value/what-is-gorm-datatypes)
+- [Using JSON Columns Across Different Databases](/guides/core-data-types/using-json-columns)
+- [Safely Updating JSON Fields In-Place](/guides/advanced-json-patterns/atomic-json-update)
+- [Integrating UUID Fields for Uniqueness](/guides/core-data-types/uuid-integration)
+- [JSON Query Helpers](/api-reference/advanced-operations/json-query-helpers)
+- [JSON Mutation (Update) Helpers](/api-reference/advanced-operations/json-update-helpers)
+
+---
