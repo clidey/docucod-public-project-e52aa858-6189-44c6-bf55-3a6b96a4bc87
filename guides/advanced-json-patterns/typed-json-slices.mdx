@@ -1,0 +1,315 @@
+---
+title: "Strongly-Typed JSON and Array Columns"
+description: "Step-by-step guide for mapping Go structs and slices directly to JSON fields in your models using JSONType[T] and JSONSlice[T]. Covers creation, querying, and updating, emphasizing type safety, serialization, and limitations."
+---
+
+# Strongly-Typed JSON and Array Columns
+
+This guide provides a practical, step-by-step walkthrough on how to use `JSONType[T]` and `JSONSlice[T]` in your GORM models to map Go structs and slices directly to JSON fields in your database. It emphasizes type safety, serialization, querying, and updating, with concrete examples and best practices across supported SQL databases.
+
+---
+
+## 1. Overview
+
+### What This Guide Helps You Accomplish
+You will learn how to:
+- Define GORM models using `datatypes.JSONType[T]` for strongly-typed JSON objects
+- Use `datatypes.JSONSlice[T]` for JSON arrays of typed elements
+- Store, retrieve, and update JSON fields with Go structs and slices
+- Write queries to fetch data with strongly-typed JSON columns
+
+### Prerequisites
+- Basic knowledge of Go structs and generics
+- Working GORM setup connected to MySQL, PostgreSQL, or SQLite (with JSON1 extension)
+- Understanding of JSON serialization in Go and GORM migration basics
+
+### Expected Outcome
+By following this guide, you will confidently map complex JSON structures and slices in your SQL database using Go type safety, with clean creation, querying, and updates.
+
+### Time Estimate
+Approximately 15–20 minutes to follow the instructions and try out the examples.
+
+### Difficulty Level
+Intermediate: Requires familiarity with GORM, generics, and JSON concepts.
+
+---
+
+## 2. Using `JSONType[T]` for Strongly-Typed JSON Objects
+
+### 2.1 Define Your Data Structures
+Create a Go struct representing the JSON object you want to store. For example:
+
+```go
+// Attribute is the strongly-typed JSON object
+type Attribute struct {
+    Sex   int
+    Age   int
+    Orgs  map[string]string
+    Tags  []string
+    Admin bool
+    Role  string
+}
+```
+
+### 2.2 Create Your GORM Model Using `JSONType[T]`
+Embed your struct using `datatypes.JSONType[Attribute]` for the JSON field:
+
+```go
+import "gorm.io/datatypes"
+
+// UserWithJSON has a JSON field with type Attribute
+type UserWithJSON struct {
+    gorm.Model
+    Name       string
+    Attributes datatypes.JSONType[Attribute]
+}
+```
+
+### 2.3 Initialize JSONType and Create Records
+Use `datatypes.NewJSONType()` to create a JSONType instance from your struct data:
+
+```go
+user := UserWithJSON{
+    Name: "hello",
+    Attributes: datatypes.NewJSONType(Attribute{
+        Age:  18,
+        Sex:  1,
+        Orgs: map[string]string{"orga": "orga"},
+        Tags: []string{"tag1", "tag2", "tag3"},
+        Admin: true,
+        Role: "admin",
+    }),
+}
+
+// Insert into database
+DB.Create(&user)
+```
+
+### 2.4 Querying Records
+Retrieve and access the inside struct directly with `Data()`:
+
+```go
+var result UserWithJSON
+DB.First(&result, user.ID)
+
+// Access attribute fields with type safety
+fmt.Println(result.Attributes.Data().Age)  // int
+fmt.Println(result.Attributes.Data().Tags) // []string
+```
+
+### 2.5 Updating JSONType Fields
+Update using a new `JSONType` instance to ensure correct serialization:
+
+```go
+jsonMap := UserWithJSON{
+    Attributes: datatypes.NewJSONType(Attribute{
+        Age:  20,
+        Sex:  2,
+        Orgs: map[string]string{"orgb": "orgb"},
+        Tags: []string{"tagX", "tagY"},
+        Admin: false,
+        Role: "tester",
+    }),
+}
+
+DB.Model(&user).Updates(jsonMap)
+```
+
+> <Tip>
+> The `JSONType[T]` does not support JSON key queries because it stores strongly-typed structs. Use `datatypes.JSON` or `JSONMap` if you require rich JSON querying capabilities.
+> </Tip>
+
+---
+
+## 3. Using `JSONSlice[T]` for Strongly-Typed JSON Arrays
+
+### 3.1 Define Slice Elements Struct
+Define the type of each element in the JSON array:
+
+```go
+// Tag defines each element stored in the JSON array
+type Tag struct {
+    Name  string
+    Score float64
+}
+```
+
+### 3.2 Create GORM Model Using `JSONSlice[T]`
+Use `datatypes.JSONSlice[Tag]` to represent the JSON array in your model:
+
+```go
+type UserWithJSON struct {
+    gorm.Model
+    Name string
+    Tags datatypes.JSONSlice[Tag]
+}
+```
+
+### 3.3 Create Records with `JSONSlice[T]`
+Construct your slice and wrap it with `datatypes.NewJSONSlice`:
+
+```go
+tags := []Tag{{Name: "tag1", Score: 0.1}, {Name: "tag2", Score: 0.2}}
+user := UserWithJSON{
+    Name: "hello",
+    Tags: datatypes.NewJSONSlice(tags),
+}
+DB.Create(&user)
+```
+
+### 3.4 Query and Access Data
+Retrieve the record and access the typed slice elements:
+
+```go
+var result UserWithJSON
+DB.First(&result, user.ID)
+fmt.Println(result.Tags[0].Name)  // Outputs "tag1"
+fmt.Println(result.Tags[1].Score) // Outputs 0.2
+```
+
+### 3.5 Updating JSONSlice Fields
+Update with a newly created `JSONSlice`:
+
+```go
+tags2 := []Tag{{Name: "tag3", Score: 10.1}, {Name: "tag4", Score: 10.2}}
+jsonMap := UserWithJSON{
+    Tags: datatypes.NewJSONSlice(tags2),
+}
+DB.Model(&user).Updates(jsonMap)
+```
+
+> <Note>
+> `JSONSlice[T]` does not support rich JSON queries or the `db.Pluck` method due to its strongly-typed nature.
+> </Note>
+
+---
+
+## 4. Important Considerations & Limitations
+
+- Both `JSONType[T]` and `JSONSlice[T]` **require explicit struct definitions** to map JSON fields — this enforces compile-time type safety.
+- Neither `JSONType[T]` nor `JSONSlice[T]` supports **JSON querying or filtering** through GORM (e.g., `.Where(datatypes.JSONQuery(..))` doesn’t work directly), unlike `datatypes.JSON` or `JSONMap`.
+- When updating JSON fields, always construct new `JSONType[T]` or `JSONSlice[T]` values to ensure proper serialization.
+- Supported Databases: MySQL, PostgreSQL, SQLite (with JSON1 extension). Ensure JSON support is enabled on your SQLite build.
+- MariaDB has known JSON limitations (not supporting `CAST(? AS JSON)`) which affect some update expressions.
+
+---
+
+## 5. Practical Example
+
+```go
+package main
+
+import (
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
+	"gorm.io/datatypes"
+	"fmt"
+)
+
+// Define strongly typed struct for JSON field
+type Attribute struct {
+	Sex   int
+	Age   int
+	Orgs  map[string]string
+	Tags  []string
+	Admin bool
+	Role  string
+}
+
+// Model using JSONType
+type UserWithJSON struct {
+	gorm.Model
+	Name       string
+	Attributes datatypes.JSONType[Attribute]
+}
+
+func main() {
+	// Setup DB
+	db, err := gorm.Open(sqlite.Open("test.db"), &gorm.Config{})
+	if err != nil {
+		panic(err)
+	}
+
+	// Migrate model
+	db.AutoMigrate(&UserWithJSON{})
+
+	// Create a user
+	user := UserWithJSON{
+		Name: "john",
+		Attributes: datatypes.NewJSONType(Attribute{
+			Sex:  1,
+			Age:  30,
+			Orgs: map[string]string{"team": "dev"},
+			Tags: []string{"go", "gorm"},
+			Admin: true,
+			Role: "developer",
+		}),
+	}
+	db.Create(&user)
+
+	// Query user
+	var result UserWithJSON
+	db.First(&result, "name = ?", "john")
+
+	// Access strongly typed data
+	fmt.Println(result.Attributes.Data().Age)  // prints 30
+	fmt.Println(result.Attributes.Data().Tags) // prints [go gorm]
+
+	// Update JSON field
+	updateAttrs := datatypes.NewJSONType(Attribute{
+		Sex:  1,
+		Age:  31,
+		Orgs: map[string]string{"team": "devops"},
+		Tags: []string{"go", "docker"},
+		Admin: false,
+		Role: "devops engineer",
+	})
+	db.Model(&result).Update("Attributes", updateAttrs)
+}
+```
+
+---
+
+## 6. Troubleshooting & Best Practices
+
+<AccordionGroup title="Common Issues & Solutions">
+<Accordion title="JSON Querying Does Not Work With JSONType[T]">
+`JSONType[T]` does not support JSON key filtering or conditions because it marshals to/from structs directly. Use fields of type `datatypes.JSON` or `datatypes.JSONMap` if you require advanced JSON query capabilities.
+</Accordion>
+<Accordion title="Error During Update or Create Operations">
+Ensure the value assigned to JSONType or JSONSlice fields is initialized using `datatypes.NewJSONType()` or `datatypes.NewJSONSlice()`. Avoid direct assignment from raw slices or structs as it may cause improper marshaling.
+</Accordion>
+<Accordion title="SQLite JSON1 Extension Errors">
+SQLite requires compilation with the `json1` extension to support JSON queries. Build SQLite with the `json1` tag: `go build --tags json1`.
+</Accordion>
+<Accordion title="MariaDB JSON Type Limitations">
+MariaDB does not support `CAST(? AS JSON)` expressions, which may limit JSON field updates that contain complex data types. Consider testing your queries carefully or avoid `JSONType[T]` updates involving complex nested data.
+</Accordion>
+</AccordionGroup>
+
+<Tip>
+Use `JSONType[T]` and `JSONSlice[T]` to enforce type safety and improve code maintainability by mapping JSON data directly to Go structs and slices with minimal boilerplate.
+</Tip>
+
+---
+
+## 7. Next Steps & Related Content
+
+- Explore [Safely Updating JSON Fields In-Place](/guides/advanced-json-patterns/atomic-json-update) to learn about atomic JSON updates using `JSONSet`.
+- Practice JSON querying with `datatypes.JSON` and `JSONMap` as covered in [Using JSON Columns Across Different Databases](/guides/core-data-types/using-json-columns).
+- For modeling arrays with JSON querying, see [Querying and Filtering JSON Arrays](/guides/advanced-json-patterns/jsonarray-queries).
+- Review setup guides to ensure proper environment and dependencies:
+  - [Prerequisites & System Requirements](/getting-started/setup-basics/prerequisites)
+  - [Install GORM Data Types](/getting-started/setup-basics/install-gorm-datatypes)
+- For understanding core concepts and underlying architecture, consult [Core Concepts & Terminology](/overview/concepts-architecture/core-concepts-terminology).
+
+---
+
+## References
+
+- [API Reference: JSONSlice[T] and JSONType[T]](/api-reference/advanced-operations/jsonslice-jsontype)
+- [Example Code: json_type_test.go](https://github.com/go-gorm/datatypes/blob/main/json_type_test.go)
+
+---
+
+Feel free to experiment by defining your own typed JSON structures and slices in your models for expressive and type-safe data access.
