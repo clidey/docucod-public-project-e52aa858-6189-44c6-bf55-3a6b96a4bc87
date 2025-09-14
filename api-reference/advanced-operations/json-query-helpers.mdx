@@ -1,0 +1,246 @@
+---
+title: "JSON Query Helpers"
+description: "Complete documentation of JSONQuery, JSONArrayQuery, and related helpers for composing JSON field queries in GORM. Details available filters (HasKey, Equals, Contains, etc.), parameter formats, and result expectations for each supported database. Addresses error handling and query composition best practices."
+---
+
+# JSON Query Helpers
+
+This page provides an authoritative reference for the JSON query helper functions in GORM Data Types. These helpers enable you to efficiently compose powerful, database-compatible JSON field queries directly in your GORM code. Whether you want to test key existence, compare JSON values, perform pattern matching, or query JSON arrays, these helpers streamline your workflow while abstracting database-specific query nuances.
+
+---
+
+## Introduction
+
+Working with JSON columns across supported SQL databases (MySQL, PostgreSQL, SQLite) requires adapting to their specific JSON query syntaxes. GORM Data Types offers JSON query helpers designed to integrate seamlessly with GORM's querying mechanism, empowering you to run expressive and concise JSON-related filters without deep database-specific knowledge.
+
+The primary tools covered:
+
+- `JSONQuery` - Compose JSON queries on JSON columns.
+- `JSONArrayQuery` - Specialized queries targeting JSON array contents.
+
+With these, you can express common operations such as: checking if a JSON key exists, comparing JSON path values, pattern matching within JSON values, and testing elements in JSON arrays.
+
+---
+
+## JSONQuery: Querying JSON Columns
+
+### Overview
+
+The `JSONQuery` helper constructs JSON column queries by key-path and value. It supports the following operations:
+
+- **HasKey**: Checks if a key or nested key exists in the JSON.
+- **Equals**: Tests whether a JSON value at specified key(s) matches a given value.
+- **Likes**: Performs pattern matching (SQL LIKE) on a JSON value.
+- **Extract**: Extracts raw JSON text at a given JSON path for direct querying or comparison.
+
+
+### Usage Pattern
+
+```go
+// Create JSONQuery targeting a JSON column named "attributes"
+query := datatypes.JSONQuery("attributes")
+
+// Checks if key exists
+query.HasKey("role")
+
+// Checks nested keys
+query.HasKey("orgs", "orga")
+
+// Checks if the nested key's value equals a specific value
+query.Equals("jinzhu", "name")
+
+// LIKE pattern matching on a nested key
+query.Likes("%admin%", "role")
+
+// Extract raw JSON text at path
+query.Extract("$.name")
+```
+
+### Generated SQL Examples
+
+| Operation                 | MySQL / SQLite Example                                            | PostgreSQL Example                                                         |
+|---------------------------|------------------------------------------------------------------|----------------------------------------------------------------------------|
+| HasKey                    | `JSON_EXTRACT(`attributes`, '$.role') IS NOT NULL`               | `attributes::jsonb ? 'role'`                                              |
+| HasKey (nested)           | `JSON_EXTRACT(`attributes`, '$.orgs.orga') IS NOT NULL`          | `attributes::jsonb -> 'orgs' ? 'orga'`                                    |
+| Equals                    | `JSON_EXTRACT(`attributes`, '$.name') = 'jinzhu'`                | `json_extract_path_text(attributes::json, 'name') = 'jinzhu'`             |
+| Likes                     | `JSON_EXTRACT(`attributes`, '$.role') LIKE '%admin%'`             | `json_extract_path_text(attributes::json, 'role') LIKE '%admin%'`          |
+| Extract (raw json text)   | `JSON_EXTRACT(`attributes`, '$.name')`                            | `json_extract_path_text(attributes::json, 'name')`                         |
+
+
+### Method Details
+
+- **`HasKey(keys ...string)`**
+
+  - Checks JSON key existence at path composed of provided keys.
+  - Keys may define nested JSON paths.
+  - Supported on MySQL, SQLite, and PostgreSQL.
+
+- **`Equals(value interface{}, keys ...string)`**
+
+  - Tests if JSON value at the specified key path equals the given value.
+  - Automatically handles type stringification for PostgreSQL.
+
+- **`Likes(value interface{}, keys ...string)`**
+
+  - Performs SQL LIKE matching for JSON string values.
+
+- **`Extract(path string)`**
+
+  - Allows extraction of raw JSON text at explicit JSON path.
+  - Useful for advanced querying scenarios.
+
+---
+
+## JSONArrayQuery: Querying JSON Arrays
+
+When your JSON column contains arrays and you want to query elements inside those arrays, use `JSONArrayQuery`. It supports:
+
+- **Contains**: Checks if a JSON array contains a specific value.
+- **In**: Checks if the JSON array values are in a provided list.
+
+### Usage Pattern
+
+```go
+query := datatypes.JSONArrayQuery("config")
+
+// Find rows where 'config' contains "c"
+db.Where(query.Contains("c")).Find(&params)
+
+// Find where nested array under "test" contains "a"
+db.Where(query.Contains("a", "test")).Find(&params)
+
+// Check if array contains any of the given values
+query.In([]string{"c", "a"})
+```
+
+### Generated SQL Examples
+
+| Operation             | MySQL                                                          | SQLite                                                                 | PostgreSQL                          |
+|-----------------------|----------------------------------------------------------------|------------------------------------------------------------------------|-----------------------------------|
+| Contains (array)       | `JSON_CONTAINS(config, JSON_ARRAY('c'))`                       | `EXISTS(SELECT 1 FROM json_each(config) WHERE value = 'c')`             | `config ? 'c'`                    |
+| Contains with keys     | `JSON_CONTAINS(config, JSON_ARRAY('a'), '$.test')`             | `EXISTS(SELECT 1 FROM json_each(config, '$.test') WHERE value = 'a')`   | (not supported)                   |
+| In (array membership)  | `JSON_CONTAINS(JSON_ARRAY('c','a'), config)`                   | `CASE WHEN json_type(config) = 'array' THEN NOT EXISTS(SELECT 1 ... )`  | (not supported)                   |
+
+### Method Details
+
+- **`Contains(value interface{}, keys ...string)`**
+
+  - Checks if JSON array contains the value.
+  - Optional keys allow specifying nested JSON path (MySQL/SQLite only).
+
+- **`In(value interface{}, keys ...string)`**
+
+  - Tests if JSON array is contained within a provided slice.
+  - Useful for matching array elements inclusively.
+
+---
+
+## Composing Queries with JSON Helpers
+
+These helpers produce `clause.Expression` objects compatible with GORM’s query builder, so you can freely combine them with other GORM clauses and conditions.
+
+### Example: Find users with a specific nested JSON key and value
+
+```go
+var users []UserWithJSON
+err := db.Where(datatypes.JSONQuery("attributes").HasKey("role")).
+  Where(datatypes.JSONQuery("attributes").Equals("admin", "role")).
+  Find(&users).Error
+if err != nil {
+  log.Fatal(err)
+}
+```
+
+### Example: Query JSON arrays containing specific elements
+
+```go
+var params []Param
+// Find records where the 'config' JSON array contains 'a'
+err := db.Where(datatypes.JSONArrayQuery("config").Contains("a")).Find(&params).Error
+if err != nil {
+  log.Fatal(err)
+}
+```
+
+---
+
+## Error Handling & Common Pitfalls
+
+- **Unsupported Database Features:**
+  - PostgreSQL supports JSONB operators but does not support `JSONArrayQuery.In` or nested keys for arrays.
+  - MariaDB lacks support for some JSON casting; updates must account for this.
+
+- **SQLite Setup:**
+  - Ensure SQLite builds include the `json1` extension to support JSON querying features.
+
+- **Path Syntax Variations:**
+  - MySQL and SQLite use `$.key1.key2` style paths.
+  - PostgreSQL uses distinct pathing with arrays like `{key1,key2}` for JSONB sets.
+
+- **Type Matching:**
+  - When using `.Equals()` with non-string values on PostgreSQL, values are stringified internally.
+
+- **Indexing:**
+  - For performance, consider database-specific JSON indexing when querying heavily.
+
+---
+
+## Best Practices
+
+- Prefer using the provided helpers than manually building JSON query strings for compatibility.
+- Combine `HasKey` and `Equals` to filter records precisely by JSON content.
+- Use `JSONArrayQuery` when your JSON contains arrays you need to filter against.
+- Test queries on your target database backend because JSON capabilities and optimizations vary.
+- Always check for `nil` or empty JSON values before querying for consistent results.
+
+---
+
+## Related Documentation
+
+- [Using JSON Columns Across Different Databases Guide](/guides/core-data-types/using-json-columns)
+- [JSON Type API Reference](/api-reference/core-data-types/json-type)
+- [Safely Updating JSON Fields In-Place](/guides/advanced-json-patterns/atomic-json-update)
+- [Strongly-Typed JSON and Array Columns](/guides/advanced-json-patterns/typed-json-slices)
+- [Querying and Filtering JSON Arrays](/guides/advanced-json-patterns/jsonarray-queries)
+- [GORM Data Types Installation](/getting-started/setup-basics/install-gorm-datatypes)
+
+---
+
+## Summary
+
+This page defined the JSON query helpers available in GORM Data Types: `JSONQuery` and `JSONArrayQuery`. These helpers serve as the foundation for crafting JSON key existence, value comparison, pattern matching, and array membership queries, adapting automatically to the underlying SQL dialects (MySQL, PostgreSQL, SQLite). Clear examples and SQL mappings guide you through usage, ensuring you use these tools effectively in real-world GORM workflows.
+
+<AccordionGroup title="Code Examples">
+<Accordion title="Find Records with JSON Key Present">
+```go
+// Find users where attributes JSON contains the key "role"
+db.Find(&users, datatypes.JSONQuery("attributes").HasKey("role"))
+```
+</Accordion>
+<Accordion title="Query Nested JSON Key for Exact Value">
+```go
+// Find user where attributes JSON 'name' equals "jinzhu"
+db.First(&user, datatypes.JSONQuery("attributes").Equals("jinzhu", "name"))
+```
+</Accordion>
+<Accordion title="Search JSON Column Using LIKE Pattern">
+```go
+// Find user where the JSON key 'role' contains 'admin' substring
+db.First(&user, datatypes.JSONQuery("attributes").Likes("%admin%", "role"))
+```
+</Accordion>
+<Accordion title="Filter Rows by JSON Array Contains">
+```go
+// Find params where JSON array 'config' contains 'c'
+db.Where(datatypes.JSONArrayQuery("config").Contains("c")).Find(&params)
+```
+</Accordion>
+</AccordionGroup>
+
+<Tip>
+Always verify your database supports the required JSON query syntax and build tags (e.g., SQLite with json1). Consider database indexing for JSON fields to optimize performance.
+</Tip>
+
+<Note>
+PostgreSQL's JSONB path syntax is different from MySQL/SQLite, but GORM Data Types abstracts this complexity via these helpers.
+</Note>
