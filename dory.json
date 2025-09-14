@@ -1,0 +1,132 @@
+{
+  "background": {
+    "decoration": "gradient"
+  },
+  "colors": {
+    "dark": "#1E3A8A",
+    "light": "#60A5FA",
+    "primary": "#60A5FA"
+  },
+  "favicon": "/favicon.svg",
+  "fonts": {
+    "family": "Montserrat",
+    "format": "woff2",
+    "source": "https://fonts.gstatic.com/s/googlesansflex/v5/t5sJIQcYNIWbFgDgAAzZ34auoVyXkJCOvp3SFWJbN5hF8Ju1x6sKCyp0l9sI40swNJwGpVd4AZzz0v6lJ4qFXNZhGjLvDSkV4USKMo6qQzwliVdHAy9jxTDHg_ugnAakpwGc-cxgUqDCIUI.woff2"
+  },
+  "icons": {
+    "library": "fontawesome"
+  },
+  "logo": {
+    "dark": "./logo/logo.svg",
+    "light": "./logo/logo.svg"
+  },
+  "name": "GORM Data Types",
+  "navigation": {
+    "tabs": [
+      {
+        "groups": [
+          {
+            "group": "Product Introduction \u0026 Value",
+            "pages": [
+              "overview/introduction-value/what-is-gorm-datatypes",
+              "overview/introduction-value/value-proposition",
+              "overview/introduction-value/target-audience-use-cases"
+            ]
+          },
+          {
+            "group": "Core Concepts \u0026 Architecture",
+            "pages": [
+              "overview/concepts-architecture/core-concepts-terminology",
+              "overview/concepts-architecture/architecture-overview"
+            ]
+          },
+          {
+            "group": "Quick Feature Overview",
+            "pages": [
+              "overview/feature-preview/feature-highlights",
+              "overview/feature-preview/integration-compatibility"
+            ]
+          }
+        ],
+        "tab": "Overview"
+      },
+      {
+        "groups": [
+          {
+            "group": "Setup \u0026 Installation",
+            "pages": [
+              "getting-started/setup-basics/prerequisites",
+              "getting-started/setup-basics/install-gorm-datatypes",
+              "getting-started/setup-basics/verify-installation"
+            ]
+          },
+          {
+            "group": "First Usage \u0026 Core Workflows",
+            "pages": [
+              "getting-started/first-usage/configure-project",
+              "getting-started/first-usage/first-examples",
+              "getting-started/first-usage/setup-troubleshooting"
+            ]
+          }
+        ],
+        "tab": "Getting Started"
+      },
+      {
+        "groups": [
+          {
+            "group": "Core Data Types in Practice",
+            "pages": [
+              "guides/core-data-types/using-json-columns",
+              "guides/core-data-types/working-with-date-time",
+              "guides/core-data-types/uuid-integration"
+            ]
+          },
+          {
+            "group": "Advanced JSON Patterns \u0026 Best Practices",
+            "pages": [
+              "guides/advanced-json-patterns/atomic-json-update",
+              "guides/advanced-json-patterns/typed-json-slices",
+              "guides/advanced-json-patterns/jsonarray-queries"
+            ]
+          },
+          {
+            "group": "Real-World Use Cases \u0026 Integration Patterns",
+            "pages": [
+              "guides/real-world-patterns/migration-best-practices",
+              "guides/real-world-patterns/integration-examples",
+              "guides/real-world-patterns/performance-tuning"
+            ]
+          }
+        ],
+        "tab": "Guides"
+      },
+      {
+        "groups": [
+          {
+            "group": "Core Data Types",
+            "pages": [
+              "api-reference/core-data-types/json-type",
+              "api-reference/core-data-types/date-type",
+              "api-reference/core-data-types/time-type",
+              "api-reference/core-data-types/uuid-type",
+              "api-reference/core-data-types/null-type"
+            ]
+          },
+          {
+            "group": "Advanced Query and Mutation APIs",
+            "pages": [
+              "api-reference/advanced-operations/json-query-helpers",
+              "api-reference/advanced-operations/json-update-helpers",
+              "api-reference/advanced-operations/jsonslice-jsontype"
+            ]
+          }
+        ],
+        "tab": "API Reference"
+      }
+    ]
+  },
+  "styling": {
+    "codeblocks": "dark",
+    "eyebrows": "breadcrumbs"
+  }
+}
