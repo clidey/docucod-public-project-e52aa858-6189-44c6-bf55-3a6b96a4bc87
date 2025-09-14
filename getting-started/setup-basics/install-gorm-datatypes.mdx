@@ -1,0 +1,158 @@
+---
+title: "Install GORM Data Types"
+description: "Step-by-step instructions to add the GORM Data Types package to your Go project. Includes Go module usage, fetching from the correct source, and verifying a successful installation. Addresses installation nuances for SQLite's JSON1 support."
+---
+
+# Install GORM Data Types
+
+Integrate the GORM Data Types package into your Go project with ease by following this step-by-step guide. This page will walk you through adding the package to your Go modules, fetching the source code correctly, and addressing special considerations for SQLite JSON support.
+
+---
+
+## 1. Prerequisites & System Requirements
+
+Before installation, ensure your development environment meets these requirements:
+
+- **Go Version:** Minimum Go 1.18 or later for generics support
+- **GORM ORM:** Use with GORM v2 or later, as datatypes integrate directly
+- **Supported Databases:** MySQL, PostgreSQL, SQLite (with JSON1 extension), and SQLServer
+- **SQLite JSON Support:** SQLite requires building with `json1` enabled (`go build --tags json1`)
+
+<Check>
+Ensure your Go environment is configured properly and GORM is set up before adding GORM Data Types.
+</Check>
+
+## 2. Installation Instructions
+
+### Add GORM Data Types with Go Modules
+
+Add the package to your project by running the following command in your project root:
+
+```bash
+go get gorm.io/datatypes@latest
+```
+
+This command fetches the latest version of GORM Data Types from the official repository.
+
+### Import the Package in Your Go Code
+
+Include the datatypes package where you define your GORM models:
+
+```go
+import "gorm.io/datatypes"
+```
+
+### Module Dependency Verification
+
+After fetching, verify your `go.mod` includes:
+
+```
+require gorm.io/datatypes vX.Y.Z
+```
+
+where `vX.Y.Z` is the installed version.
+
+### Handling SQLite JSON1
+
+SQLite does not enable JSON support by default. To use JSON features:
+
+- Build your Go program with the `json1` build tag:
+
+```bash
+go build --tags json1
+```
+
+- This ensures the SQLite driver includes JSON capabilities.
+
+### Verify Fetch Source
+
+GORM Data Types is hosted at [https://github.com/go-gorm/datatypes](https://github.com/go-gorm/datatypes). Your module will fetch directly from here.
+
+## 3. Verification of Installation
+
+Confirm successful installation by compiling a simple test program:
+
+```go
+package main
+
+import (
+	"fmt"
+	"gorm.io/datatypes"
+)
+
+func main() {
+	// Demonstrate usage of JSON type
+	userAttrs := datatypes.JSON([]byte(`{"name": "test", "age": 30}`))
+	fmt.Println("User Attributes JSON:", string(userAttrs))
+}
+```
+
+Build and run:
+
+```bash
+go run main.go
+```
+
+Expected output:
+
+```
+User Attributes JSON: {"name": "test", "age": 30}
+```
+
+If this compiles and runs without errors, the package is installed and imported correctly.
+
+## 4. Additional Notes and Best Practices
+
+- **Compatibility:** Always verify your target database supports JSON types as expected, especially MariaDB, which has limitations with JSON casting.
+- **Version Pinning:** For production projects, specify a stable version instead of `@latest` for predictable builds.
+- **SQLite Build:** Remember the `json1` tag in builds to avoid runtime JSON errors with SQLite.
+
+## 5. Common Issues & Troubleshooting
+
+<AccordionGroup title="Installation Troubleshooting">
+<Accordion title="Go Module Not Found or Version Conflicts">
+- Run `go clean -modcache` to clear cached errors
+- Verify your internet connection
+- Check your `go.mod` and `go.sum` for consistency
+</Accordion>
+<Accordion title="SQLite JSON Errors">
+- Ensure you compile with `--tags json1`
+- Confirm your SQLite driver version supports JSON
+</Accordion>
+<Accordion title="Build Errors Due to Missing Package">
+- Verify your import path is `gorm.io/datatypes`
+- Run `go mod tidy` to fix missing dependencies
+</Accordion>
+</AccordionGroup>
+
+---
+
+## 6. Next Steps & Useful Links
+
+- Proceed to [Configure Your Project for GORM Data Types](/getting-started/first-usage/configure-project) to learn how to define models using GORM Data Types.
+- Explore [Create & Query Data With Advanced Types](/getting-started/first-usage/first-examples) for practical examples.
+- Review prerequisites and [Validate Your Installation](/getting-started/setup-basics/verify-installation) for environment checks.
+
+---
+
+For deeper understanding and comprehensive examples, consult the main repository at [https://github.com/go-gorm/datatypes](https://github.com/go-gorm/datatypes).
+
+
+---
+
+# Summary
+This page guides you through installing the GORM Data Types package into your Go projects using Go modules. It includes preparation steps, fetching the module, specific instructions for SQLite's JSON1 build tag, and verifying a successful install with a quick test.
+
+Sections covered:
+- Prerequisites & System Requirements
+- Installation Using Go Modules
+- Verifying the Installation
+- Troubleshooting Common Issues
+- Next Steps and Further Reading
+
+Helpful links:
+- Official repository: https://github.com/go-gorm/datatypes
+- SQLite JSON1: https://github.com/mattn/go-sqlite3#usage
+- Related getting started pages for configuration and examples.
+
+Users should follow up by configuring their models with GORM Data Types and exploring more advanced usage scenarios in the guides and API reference.
