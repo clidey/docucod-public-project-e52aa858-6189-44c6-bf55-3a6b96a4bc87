@@ -1,0 +1,265 @@
+---
+title: "Storing and Querying Date and Time Fields"
+description: "Step-by-step instructions for modeling, inserting, and searching date and time fields using GORM's Date and Time datatypes. Includes best practices, precision handling, and compatibility notes for major databases."
+---
+
+# Storing and Querying Date and Time Fields
+
+This guide provides clear, actionable instructions to help you effectively model, insert, and query date and time fields using GORM Data Types' `Date` and `Time` types. You will learn how to handle precision, ensure compatibility across major databases (MySQL, PostgreSQL, SQLite, SQL Server), and follow best practices to avoid common pitfalls.
+
+---
+
+## 1. Overview
+
+### What This Guide Helps You Accomplish
+- Define and use `datatypes.Date` and `datatypes.Time` in your GORM models.
+- Persist date-only and time-only values correctly to your database.
+- Query based on date and time values with precision.
+- Handle database-specific behaviors and common limitations.
+
+### Prerequisites
+- Go environment set up with Go 1.18 or later.
+- GORM configured and connected to supported databases: MySQL, PostgreSQL, SQLite (with `json1` tag for JSON, but not required here), or SQL Server.
+- GORM Data Types package installed and imported.
+
+### Expected Outcome
+You will confidently store date and time values in your database with correct formatting and type representation, and retrieve records filtered by these fields.
+
+### Time Estimate
+Approximately 10-15 minutes.
+
+### Difficulty Level
+Beginner to Intermediate.
+
+---
+
+## 2. Using `datatypes.Date`
+
+`datatypes.Date` represents a calendar date without time information.
+
+### 2.1 Defining a Model with `Date`
+Include the `Date` field in your struct as follows:
+
+```go
+import (
+	"time"
+	"gorm.io/gorm"
+	"gorm.io/datatypes"
+)
+
+type UserWithDate struct {
+	gorm.Model
+	Name string
+	Date datatypes.Date
+}
+```
+
+### 2.2 Creating Records
+Create using a Go `time.Time` value wrapped as `datatypes.Date`:
+
+```go
+user := UserWithDate{
+	Name: "jinzhu",
+	Date: datatypes.Date(time.Now()), // Use current date truncated to day
+}
+DB.Create(&user)
+```
+
+### 2.3 Querying by Date
+Find records matching a specific date:
+
+```go
+var result UserWithDate
+curTime := time.Now()
+DB.First(&result, "name = ? AND date = ?", "jinzhu", datatypes.Date(curTime))
+```
+
+### 2.4 Database Behavior
+- The `Date` type stores dates with zeroed-out time (00:00:00) for consistency.
+- SQL statements insert dates as `YYYY-MM-DD 00:00:00`.
+
+### 2.5 Best Practices
+- Always construct `datatypes.Date` from a `time.Time` value, which you can truncate or normalize to the beginning of the day.
+- Expect GORM to persist only the date portion regardless of the original time.
+
+### 2.6 Common Pitfalls
+- **Mismatch in time zone or time components** can cause query misses. Ensure the time is normalized before use.
+
+### 2.7 Additional Features
+`datatypes.Date` supports JSON marshaling and gob encoding for smooth serialization.
+
+---
+
+## 3. Using `datatypes.Time`
+
+`datatypes.Time` allows storing time-of-day values, optionally with nanosecond precision.
+
+### 3.1 Defining a Model with `Time`
+Define your model field as follows:
+
+```go
+import (
+	"gorm.io/gorm"
+	"gorm.io/datatypes"
+)
+
+type UserWithTime struct {
+	gorm.Model
+	Name string
+	Time datatypes.Time
+}
+```
+
+### 3.2 Creating Records
+Use `datatypes.NewTime(hour, min, sec, nsec)` constructor to create a new `Time` value:
+
+```go
+user := UserWithTime{
+	Name: "jinzhu",
+	Time: datatypes.NewTime(1, 2, 3, 0), // 01:02:03
+}
+DB.Create(&user)
+```
+
+### 3.3 Querying by Time
+Query records by matching time values:
+
+```go
+var result UserWithTime
+searchTime := datatypes.NewTime(1, 2, 3, 0)
+DB.First(&result, "name = ? AND time = ?", "jinzhu", searchTime)
+```
+
+### 3.4 Database Compatibility
+- MySQL, PostgreSQL, SQL Server: `TIME` SQL type.
+- SQLite: saved as `TEXT` due to lack of native time type.
+
+### 3.5 Handling Nanoseconds
+- Supported by most databases if fractional second precision is enabled.
+- Nanoseconds are omitted in string representation if zero.
+
+### 3.6 Understanding String Representation
+- Times look like `HH:MM:SS` or `HH:MM:SS.NNNNNNNNN` if nanoseconds present.
+
+### 3.7 Common Pitfalls
+- SQLite stores the time value as text. Be cautious when comparing or ordering times in SQLite.
+- Parsing errors when scanning from the database may occur if time strings deviate from expected format.
+
+### 3.8 Best Practices
+- Use provided constructor functions to create valid time values.
+- When comparing times within triggers or filters, ensure consistent time formats.
+
+---
+
+## 4. Practical Examples
+
+### 4.1 Full Example with Date
+```go
+package main
+
+import (
+	"time"
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
+	"gorm.io/datatypes"
+	"fmt"
+)
+
+type UserWithDate struct {
+	gorm.Model
+	Name string
+	Date datatypes.Date
+}
+
+func main() {
+	db, err := gorm.Open(sqlite.Open("test.db"), &gorm.Config{})
+	if err != nil {
+		panic(err)
+	}
+
+	db.AutoMigrate(&UserWithDate{})
+
+	user := UserWithDate{
+		Name: "Alice",
+		Date: datatypes.Date(time.Now()),
+	}
+	db.Create(&user)
+
+	var userResult UserWithDate
+	db.First(&userResult, "name = ? AND date = ?", "Alice", datatypes.Date(time.Now()))
+
+	fmt.Printf("Found user: %v\n", userResult)
+}
+```
+
+### 4.2 Full Example with Time
+```go
+package main
+
+import (
+	"fmt"
+	"gorm.io/driver/mysql"
+	"gorm.io/gorm"
+	"gorm.io/datatypes"
+)
+
+type UserWithTime struct {
+	gorm.Model
+	Name string
+	Time datatypes.Time
+}
+
+func main() {
+	dsn := "gorm:gorm@tcp(localhost:3306)/gorm?charset=utf8&parseTime=True&loc=Local"
+	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{})
+	if err != nil {
+		panic(err)
+	}
+
+	db.AutoMigrate(&UserWithTime{})
+
+	user := UserWithTime{
+		Name: "Bob",
+		Time: datatypes.NewTime(14, 30, 0, 0), // 14:30:00
+	}
+	db.Create(&user)
+
+	var userResult UserWithTime
+	db.First(&userResult, "name = ? AND time = ?", "Bob", datatypes.NewTime(14, 30, 0, 0))
+
+	fmt.Printf("Found user: %v\n", userResult)
+}
+```
+
+---
+
+## 5. Troubleshooting & Tips
+
+### 5.1 Common Issues
+- **Date/time mismatch in queries**: Ensure the `datatypes.Date` or `datatypes.Time` values used in queries are constructed identically to those saved.
+- **Unsupported time formats in SQLite**: SQLite stores `Time` as text, so some SQL functions on `TIME` fields may not work.
+- **Time zone discrepancies**: Normalize all `time.Time` values to UTC or a consistent zone before creating `datatypes.Date` or `datatypes.Time`.
+
+### 5.2 Best Practices
+- Always migrate your schema with `AutoMigrate` to ensure field types are properly set.
+- Use constructor functions `datatypes.Date(<time.Time>)` and `datatypes.NewTime(...)` to avoid invalid stored values.
+- For predictable querying, explicitly set the time zone of your application’s `time.Time` values.
+
+### 5.3 Performance Considerations
+- Date and Time fields are natively supported and indexed well by databases, so no special performance tuning is generally needed.
+
+---
+
+## 6. Next Steps & Related Documentation
+
+- Learn how to use JSON column types effectively with GORM Data Types:[Using JSON Columns Across Different Databases](../core-data-types/using-json-columns).
+- Explore integration examples with UUIDs and composite types: [Integrating UUID Fields for Uniqueness](../core-data-types/uuid-integration).
+- For installation or setup issues, see [Prerequisites & System Requirements](../../getting-started/setup-basics/prerequisites) and [Install GORM Data Types](../../getting-started/setup-basics/install-gorm-datatypes).
+- See API references for date and time types for advanced usage and capabilities:[Date Type API](../../api-reference/core-data-types/date-type), [Time Type API](../../api-reference/core-data-types/time-type).
+
+---
+
+## License
+The documentation and code examples provided follow the MIT License as per the GORM Data Types project.
+
+---

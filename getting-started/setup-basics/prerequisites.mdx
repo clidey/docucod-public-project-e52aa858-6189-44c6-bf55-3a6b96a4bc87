@@ -1,0 +1,158 @@
+---
+title: "Prerequisites & System Requirements"
+description: "Check supported Go versions, required GORM dependencies, and which databases (MySQL, PostgreSQL, SQLite, SQLServer) work seamlessly with this library. Call out any platform-specific requirements, such as SQLite build tags for JSON support."
+---
+
+# Prerequisites & System Requirements
+
+This page outlines the essential requirements to successfully use **GORM Data Types** in your Go applications. This includes supported Go versions, required GORM dependencies, and the database platforms that seamlessly integrate with the library. It also highlights platform-specific notes to ensure smooth setup and avoid common pitfalls.
+
+---
+
+## 1. Supported Go Versions
+
+- **Minimum Go version:** Go 1.18 or later.
+  - The library uses generics and advanced type features introduced in Go 1.18.
+  - Ensure your Go environment is up to date to leverage full functionality.
+
+<Tip>
+Using an outdated Go version can result in compilation errors or missing features, especially due to GORM Data Types leveraging generics introduced in Go 1.18.
+</Tip>
+
+---
+
+## 2. Required Dependencies
+
+Before integrating GORM Data Types, confirm your project includes the following:
+
+- **GORM ORM** (gorm.io/gorm): Core ORM library.
+- **Database Drivers** (matching your database):
+  - MySQL: gorm.io/driver/mysql
+  - PostgreSQL: gorm.io/driver/postgres
+  - SQLite: gorm.io/driver/sqlite
+  - SQLServer: gorm.io/driver/sqlserver
+
+Ensure these drivers are imported and initialized correctly in your project alongside GORM Data Types.
+
+---
+
+## 3. Supported Database Platforms
+
+GORM Data Types is designed to be cross-database compatible, supporting the most common databases with JSON, Date, Time, and UUID data types:
+
+| Database    | JSON Support               | Notes                                             |
+|-------------|----------------------------|---------------------------------------------------|
+| MySQL       | JSON native type           | MariaDB limited support for JSON casts            |
+| PostgreSQL  | JSONB with advanced ops    | Full support for JSON and atomic JSON updates     |
+| SQLite      | JSON via json1 extension   | Requires sqlite driver built with `json1` tag     |
+| SQLServer   | JSON via NVARCHAR + funcs | Supports UUID and date/time types                  |
+
+<Tip>
+SQLite users must build their Go projects using the `json1` build tag to enable JSON support. For example:
+
+```
+go build --tags json1
+```
+This ensures the underlying SQLite driver supports JSON operations.
+</Tip>
+
+---
+
+## 4. Platform-Specific Requirements
+
+### SQLite
+- Must build with the `json1` tag.
+- SQLite JSON columns are stored as `TEXT` due to SQLite limitations.
+
+### MariaDB
+- MariaDB does not support casts to JSON (`CAST(? AS JSON)`) used by some JSON update operations.
+- JSON features will work, but certain atomic JSON update capabilities are limited.
+
+### PostgreSQL
+- Advanced JSONB operations and atomic JSON updates are fully supported.
+
+### SQLServer
+- Supports UUID and JSON emulation but with different underlying implementation.
+
+---
+
+## 5. Environment Variable Support for Testing
+
+The package includes an internal automated test suite configurable by environment variables:
+
+- `GORM_DIALECT` - Set to specify the target database dialect for testing (e.g., `mysql`, `postgres`, `sqlite`, `sqlserver`).
+- `GORM_DSN` - DSN connection string for database connection, fallback provided for default local configurations.
+
+These variables help adapt integration tests to your local or CI environment but are primarily for development.
+
+---
+
+## 6. Summary Checklist Before You Begin
+
+- [ ] Go version 1.18 or later installed.
+- [ ] GORM and appropriate database driver included in your project.
+- [ ] Selected database is one of MySQL, PostgreSQL, SQLite (with json1), or SQLServer.
+- [ ] For SQLite, build with `json1` tag enabled.
+- [ ] Database server configured and accessible (credentials, host, port).
+
+<Tip>
+Ensure your database user has the necessary permissions to create schemas and tables, especially when running migrations with GORM Data Types.
+</Tip>
+
+---
+
+## Troubleshooting Common Setup Issues
+
+<AccordionGroup title="Common Setup & Prerequisite Issues">
+<Accordion title="Go Version Mismatch">
+If you encounter errors related to generics or unsupported language features, verify your Go version:
+
+```bash
+go version
+```
+
+Update if below 1.18:
+
+```bash
+go install golang.org/dl/go1.18@latest
+go1.18 download
+```
+</Accordion>
+<Accordion title="SQLite JSON Support Not Working">
+Check if you compiled with the `json1` tag:
+
+```bash
+go build --tags json1
+```
+Without this, SQLite will not handle JSON columns properly.
+</Accordion>
+<Accordion title="MariaDB JSON Casts Failure">
+MariaDB lacks support for `CAST(? AS JSON)` which some JSONSet operations use.
+
+Workaround: avoid atomic JSON updates using casts or switch to MySQL or PostgreSQL for full support.
+</Accordion>
+<Accordion title="Database Connection Issues">
+Confirm DSN string and network connectivity:
+
+- Verify username, password, port, and host.
+- Run a standalone database client connection test.
+
+Set `GORM_DSN` environment variable to your DSN before running tests:
+
+```bash
+export GORM_DSN="user:password@tcp(localhost:3306)/dbname"
+```
+</Accordion>
+</AccordionGroup>
+
+---
+
+## Additional Resources
+
+- [Configure Your Project for GORM Data Types](/getting-started/first-usage/configure-project)
+- [Install GORM Data Types](/getting-started/setup-basics/install-gorm-datatypes)
+- [Feature Highlights](/overview/feature-preview/feature-highlights)
+
+These pages guide you through installation, initial setup, and understanding core features after confirming system requirements.
+
+---

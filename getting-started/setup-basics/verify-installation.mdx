@@ -1,0 +1,171 @@
+---
+title: "Validate Your Installation"
+description: "Quick validation steps to ensure GORM Data Types is correctly set up. Provides a minimal example to confirm your project builds and runs with the new data types."
+---
+
+# Validate Your Installation
+
+Ensure your GORM Data Types setup is correct by following this quick validation guide. This minimal example confirms your project builds successfully and runs basic operations using the GORM Data Types package.
+
+---
+
+## 1. Prerequisites
+
+Before you begin validation, confirm you have:
+
+- Go 1.18 or higher installed.
+- Your Go project configured with the GORM Data Types module.
+- A supported database environment ready (MySQL, PostgreSQL, SQLite with `json1` tag, or SQL Server).
+- Database connection details properly set through environment variables or defaults.
+
+<Check>
+If using SQLite, ensure your build includes the `json1` tag: `go build --tags json1`.
+</Check>
+
+---
+
+## 2. Minimal Test Example
+
+Use the following example test code to verify that your project recognizes and works with GORM Data Types. This sample connects to your configured database and attempts basic migrations and data operations on a model using the `datatypes.JSON` field.
+
+```go
+package main
+
+import (
+	"log"
+	"gorm.io/driver/postgres" // or your database driver
+	"gorm.io/gorm"
+	"gorm.io/datatypes"
+)
+
+// UserWithJSON demonstrates use of the JSON data type
+// to verify GORM Data Types functionality.
+type UserWithJSON struct {
+	gorm.Model
+	Name       string
+	Attributes datatypes.JSON
+}
+
+func main() {
+	// Update your DSN accordingly
+	dsn := "user=gorm password=gorm dbname=gorm port=9920 sslmode=disable TimeZone=Asia/Shanghai"
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	if err != nil {
+		log.Fatalf("failed to connect database: %v", err)
+	}
+
+	// AutoMigrate will create the table and columns with advanced types
+	if err := db.AutoMigrate(&UserWithJSON{}); err != nil {
+		log.Fatalf("failed to migrate: %v", err)
+	}
+
+	// Create a test record
+	testAttributes := datatypes.JSON([]byte(`{"key":"value","number":123}`))
+	user := UserWithJSON{Name: "test", Attributes: testAttributes}
+	if err := db.Create(&user).Error; err != nil {
+		log.Fatalf("failed to create record: %v", err)
+	}
+
+	// Fetch the record to validate retrieval
+	var fetched UserWithJSON
+	if err := db.First(&fetched, "name = ?", "test").Error; err != nil {
+		log.Fatalf("failed to fetch record: %v", err)
+	}
+
+	log.Printf("Successfully created and fetched user: %+v", fetched)
+}
+```
+
+---
+
+## 3. Running Validation
+
+### Steps
+
+1. **Set database connection environment variables** (optional if you want to override defaults):
+
+   ```bash
+   export GORM_DIALECT=postgres
+   export GORM_DSN='user=gorm password=gorm dbname=gorm port=9920 sslmode=disable TimeZone=Asia/Shanghai'
+   ```
+
+2. **Build your project** (for SQLite, add `json1` tag):
+
+   ```bash
+   go build
+   # or for SQLite
+   go build --tags json1
+   ```
+
+3. **Run the test example:**
+
+   ```bash
+   go run main.go
+   ```
+
+4. **Observe the output:**
+
+   - If successful, you will see a log indicating the record was created and fetched.
+   - If there is an error connecting or migrating, the log will display failure details.
+
+<Warning>
+If you get errors related to missing database drivers or connection refused, double-check your database is running and your DSN is configured correctly.
+</Warning>
+
+---
+
+## 4. Verification Checklist
+
+- [x] Project builds successfully without errors.
+- [x] The test record with JSON data is created in the database.
+- [x] The record can be retrieved, and JSON data is intact.
+- [x] No runtime panics or errors related to GORM Data Types.
+
+---
+
+## 5. Troubleshooting Common Issues
+
+<AccordionGroup title="Common Validation Issues and Solutions">
+<Accordion title="Connection Errors to Database">
+- Verify your database is running and accessible.
+- Ensure your DSN string correctly matches your database credentials and network configuration.
+- Check firewall or security groups that may block your machine's access.
+</Accordion>
+<Accordion title="Build Failures on SQLite JSON Support">
+- Confirm you are building with the `json1` tag due to SQLite binding requirements.
+- Use `go build --tags json1` or set this tag in your build scripts.
+</Accordion>
+<Accordion title="Unknown Data Type or Migration Issues">
+- Ensure you've imported the `gorm.io/datatypes` package.
+- Verify the GORM version and Data Types package compatibility.
+- Run `go mod tidy` to update your project dependencies.
+</Accordion>
+<Accordion title="JSON Marshal/Unmarshal Errors">
+- Check your JSON syntax is valid.
+- Ensure that the JSON being stored complies with the data type expectations.
+- Review database logs for any error during write operations.
+</Accordion>
+</AccordionGroup>
+
+---
+
+## 6. Next Steps
+
+Once validation succeeds:
+
+- Proceed to configure your project with advanced GORM Data Types usage ([Configure Your Project for GORM Data Types](/getting-started/first-usage/configure-project)).
+- Explore core workflows for creating and querying data with advanced types ([Create & Query Data With Advanced Types](/getting-started/first-usage/first-examples)).
+- Consult troubleshooting sections for setup and usage issues ([Troubleshooting Setup and Usage](/getting-started/first-usage/setup-troubleshooting)).
+
+---
+
+## Additional Resources
+
+- [Installation Guide](/getting-started/setup-basics/install-gorm-datatypes) — How to install GORM Data Types package.
+- [Prerequisites & System Requirements](/getting-started/setup-basics/prerequisites) — Verify your environment is ready to use GORM Data Types.
+- [JSON Type API Reference](/api-reference/core-data-types/json-type) — Deep dive on JSON data type.
+- [GORM Official Repository](https://github.com/go-gorm/datatypes) — Source code and issue tracker.
+
+---
+
+Validate your setup confidently with this guide, ensuring your models leverage GORM Data Types effectively and reliably from the start.

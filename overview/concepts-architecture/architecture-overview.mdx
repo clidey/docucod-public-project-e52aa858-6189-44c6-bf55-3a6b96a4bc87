@@ -1,0 +1,164 @@
+---
+title: "Architecture Overview"
+description: "Visualize how GORM Data Types fit into the typical Go application stack, bridging your models and the underlying database. This page includes a high-level mermaid diagram, mapping the flow from Go structs with custom data types through GORM, into SQL databases—highlighting integration points, supported drivers, and extensibility."
+---
+
+# Architecture Overview
+
+## Visualizing GORM Data Types in Your Go Application Stack
+
+When building Go applications using GORM, integrating advanced SQL data types smoothly bridges your application logic with the underlying database. This Architecture Overview illuminates how GORM Data Types fit seamlessly within this typical stack — from your Go structs enhanced with powerful data types, through GORM’s ORM capabilities, and into the SQL backend — empowering you with data structures that are expressive, type-safe, and cross-database compatible.
+
+### Why This Matters
+
+Imagine a Go application managing complex user profiles with flexible metadata stored in JSON, dates for auditing, and UUIDs for unique identification. Without a streamlined architectural understanding, integrating these fields across various relational databases quickly becomes error-prone and tedious. This overview offers a clear, high-level map to help you realize how GORM Data Types streamline this journey and where they inject the most value.
+
+---
+
+## High-Level Architecture
+
+Below is a Mermaid.js diagram capturing the core components and their relationships involved when using GORM Data Types in your application:
+
+```mermaid
+flowchart TD
+  subgraph Go Application
+    Models["Go Models with GORM Data Types"]
+    GORM["GORM ORM Layer"]
+  end
+
+  subgraph Databases
+    Postgres["PostgreSQL"]
+    MySQL["MySQL / MariaDB"]
+    SQLite["SQLite"]
+    SQLServer["SQL Server"]
+  end
+
+  Models -->|Uses| GORM
+  GORM -->|Generates SQL with Advanced Data Types| Postgres
+  GORM -->|Generates SQL with Advanced Data Types| MySQL
+  GORM -->|Generates SQL with Advanced Data Types| SQLite
+  GORM -->|Generates SQL with Advanced Data Types| SQLServer
+
+  subgraph Drivers
+    PgDriver["gorm.io/driver/postgres"]
+    MyDriver["gorm.io/driver/mysql"]
+    SQLiteDriver["gorm.io/driver/sqlite"]
+    SQLServerDriver["gorm.io/driver/sqlserver"]
+  end
+
+  GORM --> PgDriver
+  GORM --> MyDriver
+  GORM --> SQLiteDriver
+  GORM --> SQLServerDriver
+
+  PgDriver --> Postgres
+  MyDriver --> MySQL
+  SQLiteDriver --> SQLite
+  SQLServerDriver --> SQLServer
+
+  note right of Models
+    Struct fields use types like:
+    - datatypes.JSON
+    - datatypes.Date
+    - datatypes.UUID
+    - JSONType[T], JSONSlice[T]
+  end
+
+  note left of GORM
+    Handles:
+    - Data type abstraction
+    - Typed queries
+    - Auto migration
+    - JSON querying and mutations
+  end
+
+  classDef db fill:#cfe2f3,stroke:#2c7be5,stroke-width:2px
+  class Postgres,MySQL,SQLite,SQLServer db
+
+  classDef driver fill:#e2ccf3,stroke:#6f42c1,stroke-width:2px
+  class PgDriver,MyDriver,SQLiteDriver,SQLServerDriver driver
+
+  class Models,GORM fill:#d1e7dd,stroke:#0f5132,stroke-width:2px
+```
+
+
+This visualization shows how GORM Data Types are embedded in your Go model definitions. The GORM layer then acts as a translator, converting these types into database-specific SQL constructs, communicating through the respective database drivers to the actual database engines.
+
+---
+
+## Key Components and Integration Points
+
+### 1. Go Models with GORM Data Types
+
+Your application’s data layer leverages GORM Data Types to declare fields with rich semantics:
+
+- **JSON, JSONType[T], JSONSlice[T]**: Handle flexible JSON columns with strong typing and serialization support.
+- **Date and Time**: Store and query dates and times precisely across supported databases.
+- **UUID**: Create and query UUIDs ensuring uniqueness and compatibility.
+
+By embedding these types in your structs, you instantly enable cross-database compatibility without sacrificing type safety or expressiveness.
+
+### 2. GORM ORM Layer
+
+GORM acts as the core ORM, extending its data handling to incorporate these advanced types:
+
+- **Schema Migration**: Uses GORM Data Types to auto-generate accurate database schemas.
+- **Query Building**: Supports advanced JSON querying (`HasKey`, `Equals`, `Extract`), JSON updating (`JSONSet`), and UUID comparisons.
+- **Dialect Awareness**: Adapts generated SQL based on database dialect nuances (e.g., `JSONB` in PostgreSQL vs `JSON` in MySQL).
+
+### 3. Database Drivers
+
+Native GORM database drivers handle the communication with each backend:
+
+- `gorm.io/driver/postgres` for PostgreSQL
+- `gorm.io/driver/mysql` for MySQL / MariaDB
+- `gorm.io/driver/sqlite` for SQLite
+- `gorm.io/driver/sqlserver` for SQL Server
+
+Each driver understands how to handle the SQL generated for GORM Data Types and pass the data efficiently to the database engine.
+
+### 4. Supported SQL Databases
+
+GORM Data Types ensure smooth operation across popular database engines:
+
+- **PostgreSQL**: Rich JSONB support, UUID natively.
+- **MySQL/MariaDB**: JSON columns, adaptions for MariaDB limitations.
+- **SQLite**: JSON support with build tags.
+- **SQL Server**: NVARCHAR(max) and UUID workaround.
+
+---
+
+## Practical Flow: From Model to Database
+
+1. **Define Data Model:** You write Go structs with fields using types like `datatypes.JSON`, `datatypes.Date`, and `datatypes.UUID`.
+
+2. **GORM Translation:** When operating (migration, queries), GORM interprets these fields and generates database-specific SQL, adjusting for dialect nuances.
+
+3. **Querying & Updates:** Use expressive JSON and UUID query helpers to find or update rows efficiently, pushing DBMS parsing to handle complex expressions.
+
+4. **Storage:** The database stores data in appropriate native columns, for example `JSONB` in Postgres, or `JSON` in MySQL.
+
+---
+
+## Practical Tips
+
+- **Use the Right Dialect:** Always configure GORM with the correct database driver to assure proper SQL generation.
+- **Enable SQLite JSON Support:** Remember to build SQLite applications with the `json1` tag when using JSON features.
+- **Leverage JSON Query Helpers:** Utilize built-in query expressions such as `JSONQuery`, `JSONSet`, and `JSONArrayQuery` for filtering and updating JSON columns efficiently.
+- **Test Cross-DB Compatibility:** Use the provided `test_all.sh` script to validate your application against supported dialects.
+
+---
+
+## Next Steps
+
+To deepen your understanding and start using GORM Data Types effectively, explore:
+
+- [What is GORM Data Types?](/overview/introduction-value/what-is-gorm-datatypes) for foundational concepts.
+- [Using JSON Columns Across Different Databases](/guides/core-data-types/using-json-columns) to master JSON operations.
+- [Integrating UUID Fields for Uniqueness](/guides/core-data-types/uuid-integration) for unique identifiers.
+- [Safely Updating JSON Fields In-Place](/guides/advanced-json-patterns/atomic-json-update) to implement atomic JSON mutations.
+
+
+---
+
+By understanding this architecture, you harness the full power of GORM Data Types to write clear, maintainable, and flexible Go applications that seamlessly handle advanced database fields across diverse environments.

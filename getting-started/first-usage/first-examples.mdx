@@ -1,0 +1,338 @@
+---
+title: "Create & Query Data With Advanced Types"
+description: "Lead new users through canonical code samples: defining models, creating records, and performing queries using the specialized datatypes. Practical walkthrough includes handling JSON, Date, Time, and UUID fields in both model definitions and data operations."
+---
+
+# Create & Query Data With Advanced Types
+
+This guide walks you through defining Go models with GORM Data Types, creating records using these types, and performing queries that leverage their advanced capabilities. You'll learn how to use JSON, Date, Time, and UUID fields effectively in your GORM models to enhance your application’s data handling and querying.
+
+---
+
+## 1. Define Models with Specialized Data Types
+
+GORM Data Types extend the standard GORM models with fields that support advanced SQL-compatible types. Below are canonical definitions for JSON, Date, Time, and UUID types.
+
+### JSON Examples
+
+- Use the `datatypes.JSON` type to define JSON storage.
+- Use `datatypes.JSONType[T]` for strongly-typed JSON fields.
+- Use `datatypes.JSONSlice[T]` for slices with typed JSON data.
+
+```go
+import (
+	"gorm.io/gorm"
+	"gorm.io/datatypes"
+)
+
+// Basic JSON
+
+type UserWithJSON struct {
+	gorm.Model
+	Name       string
+	Attributes datatypes.JSON
+}
+
+// Strongly Typed JSON
+
+type Attribute struct {
+	Sex   int
+	Age   int
+	Orgs  map[string]string
+	Tags  []string
+	Admin bool
+	Role  string
+}
+
+type UserWithTypedJSON struct {
+	gorm.Model
+	Name       string
+	Attributes datatypes.JSONType[Attribute]
+}
+
+// JSON Slice
+
+type Tag struct {
+	Name  string
+	Score float64
+}
+
+type UserWithJSONSlice struct {
+	gorm.Model
+	Name string
+	Tags datatypes.JSONSlice[Tag]
+}
+```
+
+### Date and Time
+
+Define date and time with the `datatypes.Date` and `datatypes.Time` types.
+
+```go
+import (
+	"time"
+	"gorm.io/datatypes"
+	"gorm.io/gorm"
+)
+
+type UserWithDate struct {
+	gorm.Model
+	Name string
+	Date datatypes.Date
+}
+
+type UserWithTime struct {
+	gorm.Model
+	Name string
+	Time datatypes.Time
+}
+
+// Instantiate with specific date/time values
+user := UserWithDate{Name: "jinzhu", Date: datatypes.Date(time.Now())}
+userWithTime := UserWithTime{Name: "jinzhu", Time: datatypes.NewTime(1, 2, 3, 0)}
+```
+
+### UUID
+
+Use the `datatypes.UUID` type to represent UUIDs. Generate new UUIDs with `datatypes.NewUUIDv4()`.
+
+```go
+import (
+	"fmt"
+	"gorm.io/datatypes"
+	"gorm.io/gorm"
+)
+
+type UserWithUUID struct {
+	gorm.Model
+	Name     string
+	UserUUID datatypes.UUID
+}
+
+uuid := datatypes.NewUUIDv4()
+user := UserWithUUID{Name: "jinzhu", UserUUID: uuid}
+```
+
+
+---
+
+## 2. Creating Records With Advanced Types
+
+After defining your models, create records by assigning the appropriate datatypes in struct fields.
+
+### Example: JSON Field Creation
+
+```go
+DB.Create(&UserWithJSON{
+	Name:       "json-1",
+	Attributes: datatypes.JSON([]byte(`{"name": "jinzhu", "age": 18, "tags": ["tag1", "tag2"], "orgs": {"orga": "orga"}}`)),
+})
+```
+
+### Example: Strongly Typed JSON Creation
+
+```go
+user := UserWithTypedJSON{
+	Name: "typed-json-1",
+	Attributes: datatypes.NewJSONType(Attribute{
+		Age:  18,
+		Sex:  1,
+		Orgs: map[string]string{"orga": "orga"},
+		Tags: []string{"tag1", "tag2", "tag3"},
+	}),
+}
+DB.Create(&user)
+```
+
+### Example: JSON Slice Creation
+
+```go
+tags := []Tag{{Name: "tag1", Score: 0.1}, {Name: "tag2", Score: 0.2}}
+user := UserWithJSONSlice{
+	Name: "json-slice-1",
+	Tags: datatypes.NewJSONSlice(tags),
+}
+DB.Create(&user)
+```
+
+### Example: Date and Time Creation
+
+```go
+userWithDate := UserWithDate{Name: "jinzhu", Date: datatypes.Date(time.Now())}
+DB.Create(&userWithDate)
+
+userWithTime := UserWithTime{Name: "jinzhu", Time: datatypes.NewTime(1, 2, 3, 0)}
+DB.Create(&userWithTime)
+```
+
+### Example: UUID Creation
+
+```go
+userUUID := datatypes.NewUUIDv4()
+user := UserWithUUID{Name: "jinzhu", UserUUID: userUUID}
+DB.Create(&user)
+```
+
+---
+
+## 3. Querying Data Using Advanced Types
+
+GORM Data Types provide expressive query helpers for JSON and UUID, along with standard querying for Date and Time.
+
+### Querying JSON with `datatypes.JSONQuery`
+
+Use the `JSONQuery` expression to filter records by JSON keys or values.
+
+```go
+var user UserWithJSON
+// Find user where JSON column "attributes" has key "role"
+DB.First(&user, datatypes.JSONQuery("attributes").HasKey("role"))
+
+// Find user where attributes.name equals "jinzhu"
+DB.First(&user, datatypes.JSONQuery("attributes").Equals("jinzhu", "name"))
+```
+
+### Querying JSON arrays with `JSONArrayQuery`
+
+Check if a JSON array contains a value.
+
+```go
+var params []Param
+DB.Where(datatypes.JSONArrayQuery("config").Contains("c")).Find(&params)
+```
+
+### Updating JSON fields atomically with `JSONSet`
+
+Update or set specific JSON paths in a JSON column without overwriting the whole field.
+
+```go
+DB.Model(&UserWithJSON{}).Where("name = ?", "json-1").UpdateColumn("attributes", 
+	datatypes.JSONSet("attributes").Set("age", 20).Set("tags[0]", "tag3").Set("orgs.orga", "orgb"))
+```
+
+### Querying with UUID
+
+You can query UUID columns like any other field.
+
+```go
+var user UserWithUUID
+DB.First(&user, "user_uuid = ?", userUUID)
+```
+
+### Using Date and Time in queries
+
+```go
+var user UserWithDate
+curTime := time.Now()
+DB.First(&user, "name = ? AND date = ?", "jinzhu", datatypes.Date(curTime))
+
+var userWithTime UserWithTime
+DB.First(&userWithTime, "name = ? AND time = ?", "jinzhu", datatypes.NewTime(1, 2, 3, 0))
+```
+
+---
+
+## 4. Practical Tips & Best Practices
+
+- **SQLite users** must build Go SQLite driver with the `json1` tag to support JSON features, e.g., `go build --tags json1`.
+- MariaDB users should note that `CAST(? AS JSON)` might not be supported, impacting certain JSON update expressions.
+- Enable debug logging by setting `DEBUG=true` in your environment to capture detailed SQL logs.
+- Use strongly typed JSON (`JSONType[T]` and `JSONSlice[T]`) for safer and clearer code when working with structured JSON data.
+
+---
+
+## 5. Troubleshooting Common Issues
+
+<AccordionGroup title="Troubleshooting JSON Queries and Updates">
+<Accordion title="SQLite JSON Support">
+SQLite requires the `json1` extension. If JSON queries fail, verify that your SQLite build includes this extension with `go build --tags json1`.
+</Accordion>
+<Accordion title="MariaDB JSON_CAST Limitation">
+Casting JSON with `CAST(? AS JSON)` is unsupported in MariaDB, which may cause errors with some update patterns. As a workaround, update JSON fields using string representations or avoid JSON mutation helpers that rely on casting.
+</Accordion>
+<Accordion title="Connection Errors in Tests">
+Make sure environment variables `GORM_DIALECT` and `GORM_DSN` are correctly set. Without them, default DSNs used in tests may not connect to your database.
+</Accordion>
+</AccordionGroup>
+
+---
+
+## 6. Summary
+
+This guide showed how to:
+
+- Define GORM models using JSON, JSONType[T], JSONSlice[T], Date, Time, and UUID data types.
+- Create and insert records with these advanced types.
+- Perform sophisticated queries, including JSON key and value searching, array containment, and atomic JSON updates.
+- Utilize UUID and date/time fields in your queries.
+- Handle common platform-specific considerations and troubleshoot typical issues.
+
+Explore further in related guides on configuring your project, JSON column usage, UUID integration, and troubleshooting setup and usage.
+
+---
+
+## Additional Resources
+
+- [Configure Your Project for GORM Data Types](/getting-started/first-usage/configure-project)
+- [Using JSON Columns Across Different Databases](/guides/core-data-types/using-json-columns)
+- [Integrating UUID Fields for Uniqueness](/guides/core-data-types/uuid-integration)
+- [Safely Updating JSON Fields In-Place](/guides/advanced-json-patterns/atomic-json-update)
+
+For complete API details, consult the API Reference section on JSONType, JSONQuery helpers, and UUID types.
+
+---
+
+# Example: Complete Workflow
+
+```go
+package main
+
+import (
+	"fmt"
+	"time"
+
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
+	"gorm.io/datatypes"
+)
+
+type User struct {
+	gorm.Model
+	Name       string
+	Attributes datatypes.JSON
+	CreatedAt  datatypes.Date
+}
+
+func main() {
+	db, err := gorm.Open(sqlite.Open("test.db"), &gorm.Config{})
+	if err != nil {
+		panic(err)
+	}
+
+	// Migrate schema
+	db.AutoMigrate(&User{})
+
+	// Create a record
+	user := User{
+		Name:       "example",
+		Attributes: datatypes.JSON([]byte(`{"role": "admin", "active": true}`)),
+		CreatedAt:  datatypes.Date(time.Now()),
+	}
+	if err := db.Create(&user).Error; err != nil {
+		panic(err)
+	}
+
+	// Query user where Attributes has key "role"
+	var queried User
+	db.First(&queried, datatypes.JSONQuery("attributes").HasKey("role"))
+
+	fmt.Println("Queried User:", queried.Name)
+}
+```
+
+This snippet demonstrates the typical journey from defining a model with JSON and Date fields, to migrating the schema, creating a record, and querying based on JSON key existence.
+
+
+---
+
+_End of guide._
