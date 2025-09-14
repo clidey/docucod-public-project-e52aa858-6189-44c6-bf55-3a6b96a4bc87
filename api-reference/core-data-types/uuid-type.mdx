@@ -1,0 +1,289 @@
+---
+title: "UUID & BinUUID Types"
+description: "Full reference on UUID and BinUUID types, including UUID creation, validation, comparison, and string conversion methods. Shows how to store, retrieve, and operate on UUID fields in models, with database compatibility notes and common error conditions."
+---
+
+# UUID & BinUUID Types
+
+This page provides a complete reference to the `UUID` and `BinUUID` data types in GORM Data Types. It covers how to generate, store, validate, compare, and convert UUID values, alongside examples for usage in your GORM models. The documentation highlights their differences, database compatibility, best practices, and common pitfalls, empowering you to efficiently integrate stable unique identifiers into your Go applications.
+
+---
+
+## Overview of UUID and BinUUID Types
+
+### What are UUID and BinUUID?
+
+- **UUID**: A universally unique identifier stored as a string in the database. It is human-readable and compatible with databases that offer native UUID or string types.
+- **BinUUID**: Stores UUIDs as a compact 16-byte binary array instead of a string, improving storage and indexing efficiency but less human-readable.
+
+Both types provide methods to create UUIDs, check their state (empty, nil), and compare UUID values safely.
+
+### Database Compatibility
+
+| Database   | UUID Storage Type | Notes                              |
+|------------|-------------------|----------------------------------|
+| MySQL      | `LONGTEXT` (UUID), `BINARY(16)` (BinUUID) | String or binary storage supported                             |
+| PostgreSQL | `UUID` (UUID), `BYTEA` (BinUUID)           | Native UUID or binary supported                               |
+| SQLite     | `TEXT` (UUID), `BLOB` (BinUUID)            | Requires `json1` tag for some features; no native UUID type  |
+| SQL Server | `NVARCHAR(128)` (UUID), `BINARY(16)` (BinUUID) | Supports both string and binary forms                    |
+
+---
+
+## Getting Started with UUID and BinUUID
+
+### Importing
+
+```go
+import "gorm.io/datatypes"
+```
+
+### Defining Models
+
+Use `datatypes.UUID` or `datatypes.BinUUID` as field types in your struct models.
+
+```go
+import (
+	"gorm.io/datatypes"
+	"gorm.io/gorm"
+)
+
+type UserWithUUID struct {
+	gorm.Model
+	Name     string
+	UserUUID datatypes.UUID
+}
+
+type UserWithBinUUID struct {
+	gorm.Model
+	Name     string
+	UserUUID datatypes.BinUUID
+}
+```
+
+---
+
+## Creating and Assigning UUIDs
+
+Create new UUID values for your records using built-in generators.
+
+### For UUID (string-based):
+
+```go
+userUUIDv1 := datatypes.NewUUIDv1() // UUID version 1
+userUUIDv4 := datatypes.NewUUIDv4() // UUID version 4
+
+user := UserWithUUID{Name: "example", UserUUID: userUUIDv4}
+DB.Create(&user)
+```
+
+### For BinUUID (binary-based):
+
+```go
+userBinUUIDv1 := datatypes.NewBinUUIDv1() // version 1
+userBinUUIDv4 := datatypes.NewBinUUIDv4() // version 4
+
+user := UserWithBinUUID{Name: "example", UserUUID: userBinUUIDv4}
+DB.Create(&user)
+```
+
+Use `BinUUIDFromString` to convert a UUID string to its binary representation:
+
+```go
+binUUID := datatypes.BinUUIDFromString("6ba7b810-9dad-11d1-80b4-00c04fd430c8")
+```
+
+---
+
+## Validation and Comparison Methods
+
+These methods help you verify UUID values for emptiness, nil state, or equality.
+
+| Method           | Description                                                 | Applies To  |
+|------------------|-------------------------------------------------------------|-------------|
+| `IsNil()`        | Returns true if UUID is nil (all zero bytes).               | UUID, BinUUID |
+| `IsEmpty()`      | Returns true if UUID is nil or zero length.                 | UUID, BinUUID |
+| `Equals(other)`  | Compares UUID equality by string or byte array comparison. | UUID, BinUUID |
+| `Length()`       | Length of the UUID as string (36 characters).               | UUID, BinUUID |
+| `LengthBytes()`  | Length of the UUID in bytes (always 16).                    | BinUUID only |
+
+Pointer receivers have extra utility methods:
+
+| Method           | Description                                             |
+|------------------|---------------------------------------------------------|
+| `IsNilPtr()`     | Checks if the pointer is nil.                            |
+| `IsEmptyPtr()`   | Checks if pointer is nil or value is empty.             |
+
+Example checks:
+
+```go
+if user.UserUUID.IsNil() {
+	fmt.Println("The UUID is nil (all zeroes).")
+}
+if user.UserUUID.Equals(anotherUUID) {
+	fmt.Println("UUIDs match.")
+}
+```
+
+---
+
+## Querying and Filtering by UUID
+
+You can use UUID and BinUUID values directly in GORM queries.
+
+```go
+var user UserWithUUID
+DB.First(&user, "user_uuid = ?", userUUID)
+
+var binUser UserWithBinUUID
+DB.First(&binUser, "user_uuid = ?", binUUID)
+```
+
+Use `.Equals()` for manual equality checks in Go code.
+
+---
+
+## Updating UUID Fields
+
+Update UUID fields using GORM with mapped types:
+
+```go
+user.UserUUID = datatypes.NewUUIDv4()
+DB.Model(&user).Update("user_uuid", user.UserUUID)
+
+userBin.UserUUID = datatypes.NewBinUUIDv4()
+DB.Model(&userBin).Updates(map[string]interface{}{"user_uuid": userBin.UserUUID})
+```
+
+You can also update UUID fields to nil or empty by assigning `uuid.Nil` or `nil` depending on field type.
+
+---
+
+## Practical Examples
+
+### Example: Creating Users With UUIDs
+
+```go
+package main
+
+import (
+	"fmt"
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
+	"gorm.io/datatypes"
+)
+
+type User struct {
+	gorm.Model
+	Name     string
+	UserUUID datatypes.UUID
+}
+
+func main() {
+	db, err := gorm.Open(sqlite.Open("test.db"), &gorm.Config{})
+	if err != nil {
+		panic(err)
+	}
+
+	db.AutoMigrate(&User{})
+
+	newUUID := datatypes.NewUUIDv4()
+	user := User{Name: "Alice", UserUUID: newUUID}
+	db.Create(&user)
+
+	var result User
+	db.First(&result, "user_uuid = ?", newUUID)
+	fmt.Printf("Found user: %s with UUID: %s", result.Name, result.UserUUID.String())
+}
+```
+
+### Example: Using BinUUID
+
+```go
+package main
+
+import (
+	"fmt"
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
+	"gorm.io/datatypes"
+)
+
+type User struct {
+	gorm.Model
+	Name     string
+	UserUUID datatypes.BinUUID
+}
+
+func main() {
+	db, err := gorm.Open(sqlite.Open("test.db"), &gorm.Config{})
+	if err != nil {
+		panic(err)
+	}
+
+	db.AutoMigrate(&User{})
+
+	newUUID := datatypes.NewBinUUIDv4()
+	user := User{Name: "Bob", UserUUID: newUUID}
+	db.Create(&user)
+
+	var result User
+	db.First(&result, "user_uuid = ?", newUUID)
+	fmt.Printf("Found user: %s with BinUUID: %s", result.Name, result.UserUUID.String())
+}
+```
+
+---
+
+## Best Practices
+
+- Use **UUID** (string-based) when human readability and debugging convenience are priorities.
+- Pick **BinUUID** (binary-based) when storage size and index performance are more critical, especially on large datasets.
+- Always generate new UUIDs using provided constructors (`NewUUIDv1`, `NewUUIDv4`, `NewBinUUIDv1`, `NewBinUUIDv4`) for consistency and uniqueness.
+- Avoid manual string parsing or assigning raw UUID strings directly; use `BinUUIDFromString` for safe conversion.
+- Check for nil or empty values with `IsNil()`, `IsEmpty()` to prevent invalid UUID usage.
+- When updating records with null UUID, assign `uuid.Nil` to ensure proper database nil mapping.
+
+---
+
+## Common Pitfalls and Troubleshooting
+
+- **Mistaking field types:** Use `UUID` for string columns and `BinUUID` for binary columns to avoid serialization errors.
+- **Database incompatibility:** Ensure your database supports the column type used, e.g., PostgreSQL's `UUID` vs. binary requires `BYTEA`.
+- **Nil pointer dereference:** Use pointer receiver helper methods (`IsNilPtr`, `IsEmptyPtr`) to safely check UUID pointers.
+- **Updating UUID fields incorrectly:** When updating UUID fields, always use GORM's map or model update methods to ensure proper type handling.
+
+---
+
+## Summary
+
+UUID and BinUUID types in GORM Data Types provide you with flexible and efficient ways to store and manage universally unique identifiers in your models. This reference equips you with methods to generate, compare, validate, and manipulate UUIDs safely across supported SQL databases with full GORM integration.
+
+For comprehensive usage, always pair your UUID fields with appropriate database column types and use the provided constructors and utilities for best results.
+
+---
+
+## Related Documentation Links
+
+- [UUID Integration Guide](/guides/core-data-types/uuid-integration) — Learn how to integrate UUID fields throughout your application with practical examples.
+- [Migration Best Practices](/guides/real-world-patterns/migration-best-practices) — Strategies to evolve schemas with UUID and custom types.
+- [Setup & Installation](/getting-started/setup-basics/install-gorm-datatypes) — Ensure your environment is ready to use GORM Data Types.
+- [JSON Type Reference](/api-reference/core-data-types/json-type) — For working with complex JSON data alongside UUIDs.
+
+---
+
+## Source Code
+
+Explore the implementation and tests for UUID and BinUUID types:
+
+- [uuid.go](https://github.com/go-gorm/datatypes/blob/main/uuid.go)  
+- [binuuid.go](https://github.com/go-gorm/datatypes/blob/main/binuuid.go)  
+- [uuid_test.go](https://github.com/go-gorm/datatypes/blob/main/uuid_test.go)  
+- [binuuid_test.go](https://github.com/go-gorm/datatypes/blob/main/binuuid_test.go)
+
+---
+
+<Callout type="tip">
+For superior performance at scale, consider using `BinUUID` over `UUID` to minimize storage size and optimize indexes, especially in high-volume data scenarios.
+</Callout>
+
+
