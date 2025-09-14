@@ -1,0 +1,201 @@
+---
+title: "Null Type Helpers"
+description: "API documentation for the package’s handling of nullable values, providing helpers to safely represent and query fields that can be null in the database. Details supported types, method-level guarantees, and implications for query construction and result handling."
+---
+
+# Null Type Helpers
+
+## Overview
+
+This section documents the `Null` type helpers within GORM Data Types, designed to safely represent and work with nullable fields in your SQL database models. These helpers provide a generic and type-safe way to handle SQL `NULL` values in your Go models, enabling simple and consistent scanning from database results and clean writing of nullable values back to the database.
+
+The `Null` helpers are especially useful when you need to differentiate between a zero value (e.g., empty string, 0, false) and a SQL `NULL` during querying, insertion, or updates. They integrate seamlessly with GORM's scanning and value interface mechanisms.
+
+---
+
+## Key Concepts
+
+- **Null[T] Generic Struct**: Represents a value of type `T` that may be `NULL` in the database, along with a `Valid` flag indicating presence.
+- **Scan and Value Interfaces**: Supports `sql.Scanner` and `driver.Valuer` interfaces for database driver compatibility.
+- **Type Aliases**: Provides predefined aliases for common nullable types like `NullString`, `NullInt64`, `NullBool`, and `NullTime` for convenience.
+
+---
+
+## Null[T] Type and Usage
+
+The core `Null[T]` type is a generic container for any data type `T` that may be `NULL` in the database. It includes:
+
+- `V T`: The actual value.
+- `Valid bool`: Indicates whether the value is non-NULL (`true`) or NULL (`false`).
+
+This enables explicit handling of nullable fields in your structs.
+
+### Example Definition
+```go
+// Null represents a value that may be null.
+type Null[T any] struct {
+    V     T
+    Valid bool
+}
+```
+
+### Scanning From Database
+`Null[T]` implements `sql.Scanner` via the `Scan(value any) error` method, allowing GORM or database/sql to assign values from query results.
+
+When scanning:
+- If the database value is `NULL`, `Valid` is set to `false` and `V` is zeroed.
+- Otherwise, `Valid` is `true` and the value is converted and assigned to `V`.
+
+### Writing To Database
+`Null[T]` implements `driver.Valuer` via the `Value() (driver.Value, error)` method:
+- Returns `nil` if `Valid` is `false` (to store SQL `NULL`).
+- Returns the actual value `V` if `Valid` is `true`.
+
+---
+
+## Predefined Nullable Types
+
+GORM Data Types provides concrete type aliases for common nullable SQL column types, improving readability and convenience:
+
+| Type Name   | Underlying Type       | Description                        |
+|-------------|-----------------------|----------------------------------|
+| `NullString`| `Null[string]`        | Nullable string                  |
+| `NullInt64` | `Null[int64]`         | Nullable 64-bit integer          |
+| `NullInt32` | `Null[int32]`         | Nullable 32-bit integer          |
+| `NullInt16` | `Null[int16]`         | Nullable 16-bit integer          |
+| `NullByte`  | `Null[byte]`          | Nullable byte                   |
+| `NullFloat64`| `Null[float64]`      | Nullable 64-bit float            |
+| `NullBool`  | `Null[bool]`          | Nullable boolean                |
+| `NullTime`  | `Null[time.Time]`     | Nullable timestamp/time field   |
+
+### Usage Example
+```go
+// Define a model using nullable types
+ type User struct {
+     Name       datatypes.NullString
+     Age        datatypes.NullInt64
+     Active     datatypes.NullBool
+     LastLogin  datatypes.NullTime
+ }
+
+// Creating a user with NullInt64 Age set
+user := User{
+    Name: datatypes.NewNull("Alice"),
+    Age:  datatypes.NewNull(int64(30)),
+    Active: datatypes.NullBool{V: true, Valid: true},
+    LastLogin: datatypes.NullTime{Valid: false}, // NULL
+}
+
+// Insert or update will correctly handle NULL or non-NULL values
+DB.Create(&user)
+```
+
+---
+
+## Constructors and Helpers
+
+### NewNull
+Creates a new valid `Null[T]` instance with the provided value.
+
+```go
+func NewNull[T any](v T) Null[T] {
+    return Null[T]{V: v, Valid: true}
+}
+```
+
+Use this helper to explicitly instantiate a non-null nullable type.
+
+---
+
+## Scanning and Value Conversion Details
+
+`Null[T]` handles conversion robustly, using an internal `convertAssign` function that supports many conversions between database driver values and Go types:
+
+- Converts strings, byte slices, numbers, booleans, and timestamp types safely.
+- Returns errors if conversion fails or type mismatch occurs.
+- Handles `NULL` values by zeroing the contained value and setting `Valid` to `false`.
+
+This ensures your nullable fields behave predictably when interacting with different database backends.
+
+---
+
+## Best Practices
+
+- Use specific nullable types (`NullString`, `NullInt64`, etc.) when you need to explicitly represent `NULL` values.
+- Check the `Valid` flag before using the value to avoid confusion between zero values and `NULL`.
+- Combine nullable types with GORM’s model definitions to properly migrate and query nullable columns.
+- Use `NewNull()` constructor to create non-null values in code explicitly.
+
+---
+
+## Example: Handling Nullable Fields in GORM
+```go
+package main
+
+import (
+	"time"
+	"gorm.io/gorm"
+	"gorm.io/datatypes"
+)
+
+type Product struct {
+    gorm.Model
+    Name        datatypes.NullString
+    Price       datatypes.NullFloat64
+    InStock     datatypes.NullBool
+    Discontinued datatypes.NullBool
+    ReleasedAt  datatypes.NullTime
+}
+
+func main() {
+    // Example: Create Product with NULL price and discontinued
+    product := Product{
+        Name: datatypes.NewNull("Gadget"),
+        Price: datatypes.NullFloat64{Valid: false}, // NULL price
+        InStock: datatypes.NewNull(true),
+        Discontinued: datatypes.NewNull(false),
+        ReleasedAt: datatypes.NewNull(time.Now()),
+    }
+    DB.Create(&product)
+
+    // When querying, check validity
+    var p Product
+    DB.First(&p, product.ID)
+    if p.Price.Valid {
+        fmt.Println("Price:", p.Price.V)
+    } else {
+        fmt.Println("Price is NULL")
+    }
+}
+```
+
+---
+
+## Troubleshooting
+
+- **Issue:** Scan returns an error when reading from the database.
+  - **Cause:** The scanned value type is incompatible with the target nullable type.
+  - **Solution:** Confirm your database schema matches your Go model nullable types.
+
+- **Issue:** `Value()` returns `nil` unexpectedly.
+  - **Cause:** The `Valid` flag is `false`.
+  - **Solution:** Ensure you set `Valid` to `true` when populating `Null[T]` types programmatically.
+
+- **Issue:** `NULL` values are not saved or queried correctly.
+  - **Cause:** Using zero values without `Null[T]` wrappers or incorrect GORM configuration.
+  - **Solution:** Use nullable helpers to represent nullable columns explicitly.
+
+---
+
+## Related Documentation
+
+- [Core Concepts & Terminology](../../overview/concepts-architecture/core-concepts-terminology) — Understand the overall data types and architecture.
+- [Setup & Installation](../../getting-started/setup-basics/install-gorm-datatypes) — How to install and prepare your environment.
+- [Create & Query Data With Advanced Types](../../getting-started/first-usage/first-examples) — Practical guide to using GORM Data Types in your models.
+
+---
+
+## Summary
+This page delivers the foundational API reference for GORM Data Types' handling of nullable values via generic `Null[T]` helpers. By employing these helpers, users accurately model database fields that might be null, ensuring correct scanning, assignment, and value transmission in GORM-powered Go applications. The design prioritizes type safety, ease of use, and alignment with GORM/SQL idioms.
+
+---
