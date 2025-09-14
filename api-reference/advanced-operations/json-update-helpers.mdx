@@ -1,0 +1,249 @@
+---
+title: "JSON Mutation (Update) Helpers"
+description: "Documents the JSONSet and related builder-style utilities for updating deeply nested fields within JSON columns. Details the Set() method signatures, path and value conventions across database drivers, and batch update techniques for efficient mutations."
+---
+
+# JSON Mutation (Update) Helpers
+
+This page documents the `JSONSet` type and related builder-style utilities designed for atomic, deeply nested updates within JSON columns in your database tables. It covers how to use the `Set()` method to specify JSON paths and their new values, explains the driver-specific path syntax differences, and demonstrates batch update techniques to efficiently perform multiple JSON mutations in a single database query.
+
+---
+
+## Overview
+
+The `JSONSet` helper lets you construct expressive, atomic JSON update queries targeting nested fields inside JSON columns on supported databases — MySQL, PostgreSQL, and SQLite. Rather than replacing the entire JSON blob, `JSONSet` uses underlying database functionality (`JSON_SET` in MySQL/SQLite and `JSONB_SET` in PostgreSQL) to modify only specified keys or array elements in place.
+
+This approach:
+
+- Safely updates deeply nested JSON structures without race conditions
+- Efficiently applies multiple concurrent updates using chained `.Set()` calls
+- Allows setting simple values, arrays, objects, or even expressions like casting raw JSON
+
+
+## Supported Databases
+
+- **MySQL:** Uses `JSON_SET` function with paths like `'$.tags[0]'`.
+- **SQLite:** Uses `JSON_SET` with similar path syntax as MySQL.
+- **PostgreSQL:** Uses nested `JSONB_SET` calls with path arrays like `'{tags,0}'`.
+
+MariaDB has some limitations, such as no support for `CAST(? AS JSON)`, so you should verify feature compatibility depending on your target environment.
+
+## Using `JSONSet` for Updates
+
+### Basic Usage
+
+To construct JSON value updates, invoke `datatypes.JSONSet(columnName)` and chain `.Set(path, value)` calls for each nested field you want to update.
+
+```go
+import (
+	"gorm.io/datatypes"
+	"gorm.io/gorm"
+)
+
+type UserWithJSON struct {
+	gorm.Model
+	Name       string
+	Attributes datatypes.JSON
+}
+
+// Create initial user with nested JSON data
+DB.Create(&UserWithJSON{
+	Name:       "json-1",
+	Attributes: datatypes.JSON([]byte(`{"name": "json-1", "age": 18, "tags": ["tag1", "tag2"], "orgs": {"orga": "orga"}}`)),
+})
+
+// Build JSON update expression
+updates := datatypes.JSONSet("attributes").
+	Set("age", 20).
+	Set("tags[0]", "tag3").
+	Set("orgs.orga", "orgb")
+
+// Apply update on the `attributes` JSON column
+DB.Model(&UserWithJSON{}).Where("name = ?", "json-1").UpdateColumn("attributes", updates)
+```
+
+### Path Syntax Differences
+
+The path notation differs between MySQL/SQLite and PostgreSQL due to differences in their JSON APIs:
+
+| Database  | Example Paths                     | Notes                                  |
+|-----------|---------------------------------|----------------------------------------|
+| MySQL     | `age`, `tags[0]`, `orgs.orga`    | Uses `$.` prefix internally (added automatically)
+| PostgreSQL| `{age}`, `{tags, 0}`, `{orgs, orga}` | Paths as string arrays, using `{}` braces
+
+The `.Set()` method requires you to specify path syntax according to the database:
+
+```go
+// MySQL / SQLite
+datatypes.JSONSet("attributes").Set("tags[0]", "tag2").Set("orgs.orga", "orgb")
+
+// PostgreSQL
+datatypes.JSONSet("attributes").Set("{tags, 0}", "tag2").Set("{orgs, orga}", "orgb")
+```
+
+Your application should generate the correct path string based on the configured database dialect.
+
+### Working with Complex Values
+
+You can pass slices, structs, maps, or GORM expressions to the `.Set()` method, all of which will be safely marshaled and embedded into the SQL update:
+
+```go
+friend := User{
+	Name: "Bob",
+	Age:  21,
+}
+
+DB.Model(&UserWithJSON{}).Where("name = ?", "json-1").UpdateColumn(
+	"attributes",
+	datatypes.JSONSet("attributes").Set("friend", friend),
+)
+
+// Using gorm.Expr to cast raw JSON
+phonesJSON := `['10085', '10086']`
+DB.Model(&UserWithJSON{}).Where("name = ?", "json-1").UpdateColumn(
+	"attributes",
+	datatypes.JSONSet("attributes").Set("phones", gorm.Expr("CAST(? AS JSON)", phonesJSON)),
+)
+```
+
+MariaDB users should avoid `CAST(? AS JSON)` as it is unsupported.
+
+## Batch JSON Updates
+
+If you need to update multiple nested fields at once, chain multiple `.Set()` calls in a single `JSONSet` expression. This will generate a single atomic SQL update that applies all changes simultaneously.
+
+```go
+updateData := datatypes.JSONSet("attributes").
+	Set("age", 25).
+	Set("tags[1]", "tagX").
+	Set("orgs.neworg", "newvalue")
+
+DB.Model(&UserWithJSON{}).Where("name = ?", "json-1").UpdateColumn("attributes", updateData)
+```
+
+This approach drastically reduces database round trips and ensures the JSON object remains consistent.
+
+## Method Reference
+
+### `func JSONSet(column string) *JSONSetExpression`
+
+Creates a new `JSONSetExpression` targeting the JSON column named `column`. Use chained `.Set()` calls to specify path-value pairs to update.
+
+### `func (j *JSONSetExpression) Set(path string, value interface{}) *JSONSetExpression`
+
+Adds or updates a JSON field at the given `path` with the provided `value`. Returns the same builder for chaining.
+
+- **`path`**: Path within the JSON structure. Use driver-specific syntax.
+- **`value`**: The new value to set. Can be primitive types, slices, maps, structs, or `gorm.Expr` for raw expressions.
+
+## Internals & SQL Generation
+
+The `JSONSetExpression` builds SQL using the underlying JSON functions of each database, for example:
+
+- **MySQL / SQLite:** Generates `JSON_SET(column, '$.path1', value1, '$.path2', value2, ...)`
+- **PostgreSQL:** Generates nested `JSONB_SET` expressions for each path-value pair
+
+The builder supports automatic marshalling of complex Go types to JSON string literals as part of query construction.
+
+---
+
+## Practical Tips & Best Practices
+
+- **Prepare paths carefully:** Always format JSON paths according to your database dialect to avoid SQL errors.
+- **Use atomic batch updates:** Group multiple `.Set()` calls into one `JSONSet` expression to keep updates atomic and reduce database load.
+- **Avoid unnecessary casting on MariaDB:** MariaDB does not support casting raw JSON strings using `CAST(? AS JSON)`, so prefer proper Go structs or JSON marshalling.
+- **Test JSON updates:** Validate updates in a development database to ensure path correctness and desired update behavior.
+- **Use `gorm.Expr` for advanced usage:** When you need precise control over the JSON value or want to use SQL functions, `{value}` can be wrapped in `gorm.Expr`.
+
+## Troubleshooting
+
+<AccordionGroup title="Common Issues with JSONSet">  
+<Accordion title="Why is my PostgreSQL JSON path not working?">  
+PostgreSQL requires paths in the form `{key, subkey, index}` enclosed in curly braces, using commas as separators, e.g., `{tags, 0}`. Ensure your `.Set()` calls use this exact syntax to build proper nested JSON paths.
+</Accordion>  
+<Accordion title="MariaDB update throws syntax error on CAST(? AS JSON)">  
+MariaDB lacks CAST support for JSON types as MySQL does. Avoid using `gorm.Expr("CAST(? AS JSON)", jsonString)` with MariaDB. Instead, serialize data into appropriate JSON strings or use supported types directly.
+</Accordion>  
+<Accordion title="MySQL JSON update does not change the value">  
+Check that JSON paths are correct, including array indices (e.g., `tags[0]`). Double-check the JSON data you're updating contains the path. Note that attempting to update a non-existent JSON key may still add it, but path mistakes will cause silent failures or errors.
+</Accordion>  
+<Accordion title="JSONSet update does not apply in SQLite">  
+Verify you built SQLite with the `json1` extension enabled. Without it, JSON functions like `JSON_SET` will not operate, leading to update failures. Rebuild your SQLite driver with `go build --tags json1` to enable JSON support.
+</Accordion>  
+</AccordionGroup>
+
+---
+
+## Example: Complete Workflow
+
+```go
+package main
+
+import (
+	"gorm.io/driver/mysql"
+	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
+	"gorm.io/datatypes"
+	"log"
+)
+
+type User struct {
+	gorm.Model
+	Name       string
+	Attributes datatypes.JSON
+}
+
+func main() {
+	dsn := "user:password@tcp(127.0.0.1:3306)/dbname?charset=utf8mb4&parseTime=True&loc=Local"
+	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{
+		Logger: logger.Default.LogMode(logger.Info),
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	db.AutoMigrate(&User{})
+
+	// Create user
+	db.Create(&User{
+		Name: "json-1",
+		Attributes: datatypes.JSON([]byte(`{"age": 18, "tags": ["tag1", "tag2"], "orgs": {"orga": "orga"}}`)),
+	})
+
+	// Prepare atomic JSON update: update age, first tag, and nested org
+	updateFields := datatypes.JSONSet("attributes").
+		Set("age", 20).
+		Set("tags[0]", "tag2").
+		Set("orgs.orga", "orgb")
+
+	// Perform update
+	db.Model(&User{}).Where("name = ?", "json-1").UpdateColumn("attributes", updateFields)
+}
+```
+
+This sample loads the user, then atomically updates multiple deeply nested fields within the `attributes` JSON column.
+
+---
+
+## Related Documentation
+
+- [JSON Type](/api-reference/core-data-types/json-type) — Overview of JSON data types including basic usage and querying
+- [JSON Query Helpers](/api-reference/advanced-operations/json-query-helpers) — Functions to build JSON search queries
+- [Safely Updating JSON Fields In-Place](/guides/advanced-json-patterns/atomic-json-update) — Guide focused on atomic JSON updates with `JSONSet`
+- [Using JSON Columns Across Different Databases](/guides/core-data-types/using-json-columns) — Comprehensive cross-database JSON handling guide
+
+---
+
+## Summary
+
+- Use `JSONSet(column)` to create an atomic JSON update expression targeting a JSON column.
+- Chain `.Set(path, value)` to specify nested keys or array indices and their new values.
+- Follow database-specific path conventions:
+  - MySQL/SQLite: Strings like `orgs.orga` and `tags[0]`
+  - PostgreSQL: Curly braces with commas like `{orgs, orga}` and `{tags, 0}`
+- Efficiently batch multiple updates into a single query, ensuring data consistency and minimizing round-trips.
+- Leverage `gorm.Expr` to insert raw JSON expressions when needed.
+- Take note of MariaDB limitations (e.g., no JSON cast support).
+- Test across your target databases to ensure correct behavior.
+
+---
