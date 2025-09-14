@@ -1,0 +1,276 @@
+---
+title: "Safely Updating JSON Fields In-Place"
+description: "Learn to atomically modify parts of a JSON column (e.g., updating nested fields or arrays) using the JSONSet functionality for transactional updates. The guide details syntax and caveats for different database engines and practical optimization tips."
+---
+
+# Safely Updating JSON Fields In-Place
+
+## Overview
+
+This guide empowers you to atomically modify parts of a JSON column in your database using GORM Data Types' `JSONSet` functionality. Whether you're updating nested fields, replacing array elements, or adding new JSON keys, this approach ensures your changes are applied transactionally and efficiently.
+
+You'll learn how to use the `JSONSet` builder to craft precise, database-friendly JSON update expressions that work seamlessly with MySQL, PostgreSQL, and SQLite. The guide details syntax variations for each dialect, practical code samples, best practices to optimize your updates, and common pitfalls to avoid.
+
+## Prerequisites
+
+- Familiarity with Go language and GORM ORM
+- Your project includes GORM Data Types (`gorm.io/datatypes`)
+- Database setup supporting JSON columns (MySQL, PostgreSQL, SQLite with JSON1 enabled)
+- Define your GORM models with JSON columns using `datatypes.JSON`
+
+## What You Will Achieve
+
+- Update JSON column fields atomically without full JSON replacement
+- Modify nested keys, array elements, or add complex JSON objects safely
+- Leverage database-specific JSON syntax correctly through GORM abstraction
+- Enhance performance by minimizing unnecessary JSON data rewriting
+
+## Time Estimate
+
+About 15-30 minutes to understand and implement basic to intermediate JSON field atomic updates
+
+## Difficulty Level
+
+Intermediate
+
+---
+
+## Step-by-Step Guide
+
+### 1. Understand the JSONSet Builder
+
+`JSONSet` creates a chainable expression to update JSON columns by targeting specific paths within the JSON structure.
+
+- In MySQL and SQLite, paths use dotted notation and array indices like: `age`, `orgs.orga`, `tags[0]`
+- In PostgreSQL, paths use curly braces and commas, e.g.: `{age}`, `{orgs, orga}`, `{tags, 0}`
+
+### 2. Import Required Packages
+
+```go
+import (
+	"gorm.io/datatypes"
+	"gorm.io/gorm"
+)
+```
+
+### 3. Define Your Model with a JSON Column
+
+```go
+type UserWithJSON struct {
+	gorm.Model
+	Name       string
+	Attributes datatypes.JSON
+}
+```
+
+### 4. Create Sample Data
+
+```go
+DB.Create(&UserWithJSON{
+	Name: "json-1",
+	Attributes: datatypes.JSON([]byte(`{"name": "json-1", "age": 18, "tags": ["tag1", "tag2"], "orgs": {"orga": "orga"}}`)),
+})
+```
+
+### 5. Construct Atomic JSON Updates
+
+Use `JSONSet` to build updates targeting specific JSON fields atomically.
+
+```go
+// Example - set age to 20, update first tag, and change a nested org value
+updates := datatypes.JSONSet("attributes").
+	Set("age", 20).
+	Set("tags[0]", "tag3").
+	Set("orgs.orga", "orgb")
+
+if err := DB.Model(&UserWithJSON{}).
+	Where("name = ?", "json-1").
+	UpdateColumn("attributes", updates).
+	Error; err != nil {
+	panic(err)
+}
+```
+
+#### Expected outcome:
+- Only specified parts of the JSON document update, no overwriting entire JSON
+- Database sends efficient JSON modification queries under the hood
+
+### 6. Handling Complex Values and Expressions
+
+You can assign structs, maps, slices, or even raw expressions.
+
+```go
+type User struct {
+	Name string
+	Age  int
+}
+friend := User{Name: "Bob", Age: 21}
+
+// Using a struct value in JSON path update
+DB.Model(&UserWithJSON{}).
+	Where("name = ?", "json-1").
+	UpdateColumn("attributes", datatypes.JSONSet("attributes").Set("friend", friend))
+
+// Using a raw expression (useful for JSON casts)
+DB.Model(&UserWithJSON{}).
+	Where("name = ?", "json-1").
+	UpdateColumn("attributes", datatypes.JSONSet("attributes").Set("extra", gorm.Expr("CAST(? AS JSON)", `["a", "b"]`)))
+```
+
+### 7. Database-Specific Notes
+
+- **MySQL** and **SQLite** use `JSON_SET(column, path, value, ...)` with paths like `age`, `orgs.orga`, `tags[0]`.
+- **PostgreSQL** uses nested `jsonb_set` calls with paths like `{age}`, `{orgs, orga}`, `{tags, 0}`.
+- MariaDB **does not support** `CAST(? AS JSON)`; in that case, JSON arrays or objects are passed as strings.
+
+### 8. Validate Updated Data
+
+Fetch the updated record and inspect the JSON field.
+
+```go
+var user UserWithJSON
+DB.First(&user, "name = ?", "json-1")
+
+var attrs map[string]interface{}
+json.Unmarshal(user.Attributes, &attrs)
+
+fmt.Println(attrs["age"])        // Should print 20
+fmt.Println(attrs["tags"])       // Should print ["tag3", "tag2"]
+fmt.Println(attrs["orgs"].(map[string]interface{})["orga"]) // Should print "orgb"
+```
+
+---
+
+## Examples & Use Cases
+
+### Example 1: Simple Field Update
+
+```go
+// Update int and string keys
+DB.Model(&UserWithJSON{}).
+	Where("name = ?", "json-1").
+	UpdateColumn("attributes", datatypes.JSONSet("attributes").
+		Set("age", 25).
+		Set("role", "tester"))
+```
+
+### Example 2: Array Element Update
+
+```go
+// Change first item in tags array
+DB.Model(&UserWithJSON{}).
+	Where("name = ?", "json-2").
+	UpdateColumn("attributes", datatypes.JSONSet("attributes").
+		Set("tags[0]", "tag2"))
+```
+
+### Example 3: Nested Object Update with Struct
+
+```go
+type Address struct {
+	City string
+	Zip  string
+}
+
+address := Address{City: "New City", Zip: "12345"}
+
+DB.Model(&UserWithJSON{}).
+	Where("name = ?", "json-3").
+	UpdateColumn("attributes", datatypes.JSONSet("attributes").
+		Set("address", address))
+```
+
+### Example 4: PostgreSQL Update with JSONB_SET
+
+_PostgreSQL paths require braces and commas:_
+
+```go
+DB.Model(&UserWithJSON{}).
+	Where("name = ?", "json-1").
+	UpdateColumn("attributes", datatypes.JSONSet("attributes").
+		Set("{age}", 30).
+		Set("{tags,0}", "tag5"))
+```
+
+---
+
+## Best Practices & Tips
+
+- **Prefer atomic JSON updates over full JSON replacement** to avoid overwriting concurrent changes.
+- **Understand your database’s JSON path syntax** and use the appropriate path format:
+  - MySQL/SQLite: `key` or `key.subkey` or `array[index]`
+  - PostgreSQL: `{key}`, `{key,subkey}`, `{array,index}`
+- **Avoid using MariaDB if you depend on JSON casting expressions** like `CAST(? AS JSON)`, or handle JSON fields as strings accordingly.
+- **Lock the row or use explicit transactions** when performing multiple JSON atomic updates to ensure data consistency.
+- **Use `gorm.Expr` carefully** to pass raw SQL expressions, especially with PostgreSQL JSONB.
+
+---
+
+## Troubleshooting
+
+<AccordionGroup title="Common Issues When Updating JSON Fields">
+<Accordion title="Updates Not Applying or JSON Data Unchanged">
+- Confirm the JSON column exists and is properly typed in your DB schema.
+- Check if the `UpdateColumn` condition matches the intended row.
+- Verify your path format matches the database requirements.
+</Accordion>
+<Accordion title="Errors When Using gorm.Expr for JSON Casting">
+- MariaDB does not support `CAST(? AS JSON)`; use string conversion or avoid such expressions.
+- For MySQL, ensure server version is not MariaDB when using JSON casting.
+- In SQLite, use `JSON(?)` for casting.
+</Accordion>
+<Accordion title="Nested JSON Object or Array Updates Fail">
+- Validate JSON structure and path syntax.
+- Use Go structs or maps that serialize correctly to JSON.
+- Make sure you do not mix incompatible JSON types (e.g., string vs array).
+</Accordion>
+</AccordionGroup>
+
+<Callout>
+<Tip>
+If you plan to perform frequent JSON updates, consider indexing JSON keys in your database when supported (e.g., GIN indexes in PostgreSQL) to improve query performance.
+</Tip>
+</Callout>
+
+---
+
+## Next Steps & Related Guides
+
+- Explore [Using JSON Columns Across Different Databases](/guides/core-data-types/using-json-columns) for foundational JSON usage.
+- Learn how to use [Strongly-Typed JSON and Array Columns](/guides/advanced-json-patterns/typed-json-slices) for generic JSON data handling.
+- Deepen your query skills with [Querying and Filtering JSON Arrays](/guides/advanced-json-patterns/jsonarray-queries).
+- Review [Prerequisites & System Requirements](/getting-started/setup-basics/prerequisites) to ensure your environment is set up.
+
+---
+
+## Summary of Key Code Snippet
+
+```go
+// Create JSONSet expression for atomic update
+updates := datatypes.JSONSet("attributes").
+	Set("age", 25).
+	Set("tags[0]", "tagX").
+	Set("orgs.orga", "orgModified")
+
+// Apply update transactionally
+DB.Model(&UserWithJSON{}).
+	Where("name = ?", "json-1").
+	UpdateColumn("attributes", updates)
+```
+
+---
+
+By incorporating these practices and methods, you can confidently and safely modify JSON columns directly within your database records, maintaining atomicity and optimizing your application's data manipulation workflows.
+
+---
+
+## Appendix: JSONSet Path Syntax Quick Reference
+
+| Database     | JSON Path Syntax              | Examples                        |
+|--------------|------------------------------|--------------------------------|
+| MySQL/SQLite | dot notation & brackets       | `age`, `orgs.orga`, `tags[0]` |
+| PostgreSQL   | curly braces, comma-separated | `{age}`, `{orgs, orga}`, `{tags, 0}` |
+
+---
+
+For complete details, visit the [GORM Data Types GitHub Repository](https://github.com/go-gorm/datatypes).
