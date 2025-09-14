@@ -1,0 +1,304 @@
+---
+title: "Configure Your Project for GORM Data Types"
+description: "Explain how to import the datatypes module and reference it within your data models. Covers connection setup to compatible databases and the integration of new fields using `datatypes.JSON`, `datatypes.Date`, `datatypes.Time`, and `datatypes.UUID`."
+---
+
+# Configure Your Project for GORM Data Types
+
+This guide walks you through importing the `datatypes` module, integrating it with your Go data models, setting up connections to supported databases, and using advanced fields like `datatypes.JSON`, `datatypes.Date`, `datatypes.Time`, and `datatypes.UUID` in your projects.
+
+---
+
+## 1. Importing the `datatypes` Module
+
+Before using GORM Data Types, import the module in your Go files:
+
+```go
+import "gorm.io/datatypes"
+```
+
+This import unlocks access to advanced SQL-compatible data types that seamlessly integrate into your GORM models.
+
+---
+
+## 2. Connecting to Supported Databases
+
+GORM Data Types work with the following database dialects:
+
+- MySQL
+- PostgreSQL
+- SQLite (requires json1 build tag)
+- SQL Server
+
+Connection setup for these databases follows standard GORM practices. Use the following patterns as examples, customizing your Data Source Name (DSN) accordingly.
+
+### Example Database Connections
+
+```go
+import (
+	"gorm.io/driver/mysql"
+	"gorm.io/driver/postgres"
+	"gorm.io/driver/sqlite"
+	"gorm.io/driver/sqlserver"
+	"gorm.io/gorm"
+)
+
+// MySQL example
+mysqlDSN := "user:password@tcp(localhost:3306)/dbname?charset=utf8&parseTime=True&loc=Local"
+db, err := gorm.Open(mysql.Open(mysqlDSN), &gorm.Config{})
+
+// PostgreSQL example
+pgDSN := "host=localhost user=username password=password dbname=dbname port=5432 sslmode=disable TimeZone=UTC"
+db, err := gorm.Open(postgres.Open(pgDSN), &gorm.Config{})
+
+// SQLite example (remember to build with `json1` tag)
+db, err := gorm.Open(sqlite.Open("test.db"), &gorm.Config{})
+
+// SQL Server example
+sqlserverDSN := "sqlserver://username:password@localhost:1433?database=dbname"
+db, err := gorm.Open(sqlserver.Open(sqlserverDSN), &gorm.Config{})
+```
+
+> **Tip:** For SQLite JSON support, build your project with the `json1` tag:
+>
+> ```bash
+go build --tags json1
+```
+
+---
+
+## 3. Defining Models with GORM Data Types
+
+Enhance your GORM models by adding fields with GORM Data Types. This enables powerful, type-safe mapping and querying.
+
+### Supported Data Types
+
+| Data Type          | Description                            | Supported Databases           |
+|--------------------|------------------------------------|------------------------------|
+| `datatypes.JSON`   | Raw JSON data stored in JSON/JSONB | MySQL, PostgreSQL, SQLite, SQL Server |
+| `datatypes.JSONType[T]` | Generic typed JSON for custom structs | MySQL, PostgreSQL, SQLite |
+| `datatypes.JSONSlice[T]` | Generic typed JSON slice arrays   | MySQL, PostgreSQL, SQLite |
+| `datatypes.Date`   | Date-only values (`YYYY-MM-DD`)      | MySQL, PostgreSQL, SQLite, SQL Server |
+| `datatypes.Time`   | Time-only values with optional nanos | MySQL, PostgreSQL, SQLite, SQL Server |
+| `datatypes.UUID`   | UUID values with helpers              | MySQL, PostgreSQL, SQL Server, SQLite |
+
+### Example: Using `datatypes.JSON` in a Model
+
+```go
+import "gorm.io/datatypes"
+
+type UserWithJSON struct {
+	gorm.Model
+	Name       string
+	Attributes datatypes.JSON
+}
+
+// Usage example
+user := UserWithJSON{
+	Name:       "jinzhu",
+	Attributes: datatypes.JSON([]byte(`{"age": 18, "role": "admin", "tags": ["tag1", "tag2"]}`)),
+}
+db.Create(&user)
+```
+
+### Example: Using `datatypes.Date` and `datatypes.Time`
+
+```go
+import (
+	"time"
+	"gorm.io/datatypes"
+)
+
+type Event struct {
+	gorm.Model
+	Name string
+	Date datatypes.Date  // Only date part
+	Time datatypes.Time  // Only time part
+}
+
+// Create an event
+curTime := time.Now()
+event := Event{Name: "Launch", Date: datatypes.Date(curTime), Time: datatypes.NewTime(curTime.Hour(), curTime.Minute(), curTime.Second(), 0)}
+db.Create(&event)
+```
+
+### Example: Using `datatypes.UUID`
+
+```go
+import (
+	"gorm.io/datatypes"
+)
+
+type UserWithUUID struct {
+	gorm.Model
+	Name     string
+	UserUUID datatypes.UUID
+}
+
+// Generate a new random UUID (version 4)
+userUUID := datatypes.NewUUIDv4()
+
+user := UserWithUUID{Name: "jinzhu", UserUUID: userUUID}
+db.Create(&user)
+```
+
+> **Note:** You can compare UUIDs using the `Equals()` method and obtain their string representation with `String()`.
+
+---
+
+## 4. Integrating the Data Types into Your Application
+
+### Adding New Fields
+
+Add fields with GORM data types within your model structs, then use standard GORM migration and querying methods:
+
+```go
+// AutoMigrate your models
+err := db.AutoMigrate(&UserWithJSON{}, &Event{}, &UserWithUUID{})
+if err != nil {
+	panic(err)
+}
+
+// Create new records
+user := UserWithJSON{Name: "jinzhu", Attributes: datatypes.JSON([]byte(`{"role":"admin"}`))}
+db.Create(&user)
+
+// Query JSON keys
+var result UserWithJSON
+// Find user where Attributes JSON contains key 'role'
+db.First(&result, datatypes.JSONQuery("attributes").HasKey("role"))
+```
+
+### Using Generic JSON Types
+
+If you prefer strongly typed JSON fields, use `JSONType[T]` or `JSONSlice[T]`.
+
+```go
+// Define attribute structure
+
+    type Attribute struct {
+        Age  int
+        Role string
+        Tags []string
+    }
+
+// Use JSONType for a single struct
+
+    type UserWithAttributes struct {
+        gorm.Model
+        Name       string
+        Attributes datatypes.JSONType[Attribute]
+    }
+
+// Create with typed JSON
+
+    attr := Attribute{Age: 25, Role: "manager", Tags: []string{"tag1", "tag2"}}
+    user := UserWithAttributes{
+        Name:       "alice",
+        Attributes: datatypes.NewJSONType(attr),
+    }
+    db.Create(&user)
+```
+
+For arrays:
+
+```go
+// Define tag structure
+
+type Tag struct {
+	Name  string
+	Score float64
+}
+
+// Use JSONSlice for arrays
+
+type UserWithTags struct {
+	gorm.Model
+	Name string
+	Tags datatypes.JSONSlice[Tag]
+}
+
+// Create with JSON slice
+
+tags := []Tag{{Name: "tag1", Score: 0.5}, {Name: "tag2", Score: 0.8}}
+user := UserWithTags{
+	Name: "bob",
+	Tags: datatypes.NewJSONSlice(tags),
+}
+db.Create(&user)
+```
+
+---
+
+## 5. Practical Tips
+
+- Always migrate your schema after adding or modifying fields using `db.AutoMigrate(&YourModel{})`.
+- For SQLite, ensure to build with the `json1` build tag (`go build --tags json1`) to enable JSON features.
+- MariaDB does not fully support JSON casting used in updates; if you use MariaDB, be cautious of JSON update expressions.
+- Use `datatypes.JSONQuery` to build expressive JSON queries that work across supported databases.
+- Use `datatypes.JSONSet` for atomic in-place updates to JSON fields where applicable.
+
+---
+
+## 6. Common Pitfalls & Troubleshooting
+
+<AccordionGroup title="Troubleshooting Common Issues">
+<Accordion title="SQLite JSON Support Not Working">
+Ensure you build your project with the `json1` tag. Missing this tag disables JSON functions in SQLite:
+
+```bash
+go build --tags json1
+```
+
+</Accordion>
+<Accordion title="Connection Errors to Database">
+Double-check your DSN (Data Source Name) strings and that your database service is running and accessible. For local testing, ensure ports and credentials match your local setup.
+
+</Accordion>
+<Accordion title="Unexpected Data Format in JSON Columns">
+Verify your JSON field is defined as `datatypes.JSON` or a compatible typed variant. When unmarshaling, ensure your struct has fields matching the stored JSON structure.
+
+</Accordion>
+<Accordion title="MariaDB JSON Casting Errors">
+MariaDB does not support `CAST(? AS JSON)`. To avoid issues, consider using supported MySQL versions or adjust update logic to avoid JSON casting.
+
+</Accordion>
+</AccordionGroup>
+
+---
+
+## 7. Next Steps
+
+- After configuring your project and successfully connecting, explore how to [Create & Query Data With Advanced Types](/getting-started/first-usage/first-examples).
+- Consult the [Troubleshooting Setup and Usage](/getting-started/first-usage/setup-troubleshooting) guide for advanced help.
+- For deep dives on specific data types, review the API reference pages on [JSON Type](/api-reference/core-data-types/json-type), [Date Type](/api-reference/core-data-types/date-type), and [UUID & BinUUID Types](/api-reference/core-data-types/uuid-type).
+
+---
+
+For comprehensive examples and code snippets, see the [GORM Data Types README](https://github.com/go-gorm/datatypes) on GitHub.
+
+---
+
+# Summary Diagram
+
+```mermaid
+flowchart TD
+    A[Import datatypes module] --> B[Define models with datatypes.JSON, Date, Time, UUID]
+    B --> C[Configure database connection]
+    C --> D[Use GORM AutoMigrate to update schema]
+    D --> E[Perform Create, Query, and Update operations]
+    E --> F{Supported Databases}
+    F --> |MySQL| G[MySQL]
+    F --> |PostgreSQL| H[PostgreSQL]
+    F --> |SQLite (with json1 tag)| I[SQLite]
+    F --> |SQL Server| J[SQL Server]
+
+    classDef dbs fill:#0288d1,color:#fff
+    class G,H,I,J dbs
+```
+
+---
+
+<Info>
+This page complements foundational setup and installation guidance. For installation and prerequisite steps, visit the [Install GORM Data Types](/getting-started/setup-basics/install-gorm-datatypes) and [Prerequisites & System Requirements](/getting-started/setup-basics/prerequisites) pages.
+</Info>
