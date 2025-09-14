@@ -1,0 +1,174 @@
+---
+title: "Schema Migration Strategies with Custom Data Types"
+description: "A practical guide to evolving your database schema with GORM Data Types. Covers versioning, backward compatibility, and tips for handling upgrades in production environments."
+---
+
+# Schema Migration Strategies with Custom Data Types
+
+This guide equips you with practical strategies and best practices for evolving your database schemas when using GORM Data Types. It focuses on managing schema versioning, maintaining backward compatibility, and handling production upgrades safely—especially when working with advanced custom data types such as JSON, UUID, Date, and Time.
+
+---
+
+## 1. Understanding the Challenge
+
+Database schemas rarely remain static. As your application evolves, so do your data requirements. When using custom GORM Data Types, schema migrations must delicately balance:
+
+- **Data integrity:** Avoid losing or corrupting existing data.
+- **Backward compatibility:** Ensure older application versions continue to work until fully upgraded.
+- **Minimal downtime:** Avoid extended locking or blocking operations.
+
+Migrating schema fields backed by types like JSON or UUID requires additional care compared to primitive types since these fields often contain complex structured data or binary formats.
+
+---
+
+## 2. Planning Your Schema Migration Workflow
+
+### Prerequisites
+- Ensure your GORM models use GORM Data Types consistently (e.g., `datatypes.JSON`, `datatypes.UUID`, `datatypes.Date`).
+- Use database drivers and versions supported by GORM Data Types (MySQL, PostgreSQL, SQLite with `json1` extension, or SQL Server).
+- Have version-controlled migration scripts or tools (e.g., [golang-migrate](https://github.com/golang-migrate/migrate)) ready.
+
+### Expected Outcome
+By following this guide, you will:
+- Create stepwise migrations that safely modify fields using custom data types.
+- Maintain compatibility and data consistency across application versions.
+- Understand tips for atomic updates on JSON fields.
+
+---
+
+## 3. Step-by-Step Schema Migration Procedures
+
+### Step 1: Identify Schema Changes Involving Custom Data Types
+
+Focus your migration plan on columns that use GORM Data Types such as:
+- `datatypes.JSON` or `datatypes.JSONType[T]`
+- `datatypes.UUID`
+- `datatypes.Date` and `datatypes.Time`
+
+**Example:** Adding a new JSON attribute or changing UUID formats.
+
+### Step 2: Create Backward-Compatible Migrations
+
+When altering JSON fields or UUIDs:
+
+- Use additive changes where possible (e.g., adding new JSON keys or optional UUID columns).
+- Avoid dropping or renaming columns until the application no longer depends on the old schema.
+- Create new columns alongside the old ones and populate them incrementally.
+
+### Step 3: Use Atomic JSON Updates for In-Place Modifications
+
+GORM Data Types support atomic JSON updates via `datatypes.JSONSet`. This lets you update nested JSON fields without replacing the entire JSON document, reducing risk and downtime.
+
+```go
+// Example: Update nested JSON attributes atomically
+DB.Model(&user).Where("name = ?", "json-1").UpdateColumn("attributes", 
+  datatypes.JSONSet("attributes").
+    Set("age", 20).
+    Set("tags[0]", "tag3").
+    Set("orgs.orga", "orgb"))
+```
+
+This is especially useful in production to minimize lock contention and rollback risks.
+
+### Step 4: Migrate UUID Field Changes Carefully
+
+- Generate new UUIDs in the desired format (e.g., UUIDv4) using `datatypes.NewUUIDv4()`.
+- Migrate existing UUIDs to new formats in batches if needed.
+- When comparing UUID columns, use the provided `Equals()` method for accuracy.
+
+### Step 5: Handle Date and Time Field Changes
+
+- For date-only changes, use `datatypes.Date` which truncates time to the start of the day.
+- For time-only changes, use `datatypes.Time` with nanosecond support where possible.
+- When adding these fields, auto-migrate using GORM’s `AutoMigrate`.
+
+### Step 6: Test Migration Scripts in a Staging Environment
+
+- Use test databases configured like production.
+- Run migrations end-to-end to verify compatibility and data integrity.
+- Test the application against both the old and new schemas.
+
+### Step 7: Apply Gradual Rollout and Monitoring
+
+- Apply migrations during low-traffic periods.
+- Monitor logs for errors during and after migration.
+- Roll back quickly using backup snapshots if failures occur.
+
+---
+
+## 4. Practical Tips & Best Practices
+
+- **Version Your Schema** with migration tools and increment column versions clearly.
+- **Automate Data Copying** when creating parallel new columns before deprecation.
+- **Use JSON Queries** (`datatypes.JSONQuery`) to validate data presence before and after migration.
+- Maintain **consistent data types** in your GORM models and migration scripts.
+- **Avoid Direct JSON String Manipulation** in migration code; prefer atomic updates with `JSONSet`.
+- **Beware of Database-Specific Syntax:** JSON path keys differ between MySQL, PostgreSQL, and SQLite.
+
+---
+
+## 5. Troubleshooting Common Issues
+
+### Issue: Migration Fails Due to MariaDB JSON Limitations
+MariaDB doesn’t fully support JSON casting operations like `CAST(? AS JSON)`. 
+
+**Solution:**
+- Avoid JSON casting in migrations on MariaDB.
+- Use string representations instead or selectively disable features.
+
+### Issue: Inconsistent Date or Time Formats After Migration
+
+**Solution:**
+- Always use `datatypes.Date` and `datatypes.Time` wrappers.
+- Confirm your database column types align with expected SQL types.
+
+### Issue: UUID Comparison Errors
+
+**Solution:**
+- Use `Equals()` method from the `datatypes.UUID` type instead of direct comparison.
+
+### Issue: JSON Update Queries Not Working on SQLite
+
+**Solution:**
+- Ensure you build SQLite with `json1` build tag.
+- Verify that JSON function support exists in your SQLite version.
+
+---
+
+## 6. Example Migration for JSON Attribute Addition
+
+```go
+// Migration to add a new field "phoneNumbers" as JSON array to "attributes"
+func AddPhoneNumbersColumn(db *gorm.DB) error {
+  // Add new column if not exists
+  err := db.Migrator().AddColumn(&UserWithJSON{}, "PhoneNumbers")
+  if err != nil {
+      return err
+  }
+
+  // Optional: Set default phoneNumbers as empty array
+  return db.Model(&UserWithJSON{}).
+    UpdateColumn("attributes", datatypes.JSONSet("attributes").Set("phones", []string{})).Error
+}
+
+// UserWithJSON represents your GORM model with JSON field
+type UserWithJSON struct {
+  gorm.Model
+  Name       string
+  Attributes datatypes.JSON
+}
+```
+
+---
+
+## 7. References & Next Steps
+
+- Learn **Atomic JSON Updates**: [Safely Updating JSON Fields In-Place Guide](../advanced-json-patterns/atomic-json-update)
+- Understand JSON querying patterns: [Using JSON Columns Across Different Databases](../core-data-types/using-json-columns)
+- Explore **Typed JSON Slices** for type-safe JSON arrays: [Strongly-Typed JSON and Array Columns](../advanced-json-patterns/typed-json-slices)
+- Handle **UUID Integration** carefully: [Integrating UUID Fields for Uniqueness](../core-data-types/uuid-integration)
+- Review **Date and Time handling**: [Storing and Querying Date and Time Fields](../core-data-types/working-with-date-time)
+
+---
+
+By following these migration strategies, you ensure your GORM Data Types-based application evolves without disruption while maintaining data fidelity and enabling advanced querying capabilities.
