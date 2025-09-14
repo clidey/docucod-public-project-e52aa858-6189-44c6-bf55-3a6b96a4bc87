@@ -1,0 +1,160 @@
+---
+title: "Integration & Compatibility"
+description: "Review database compatibility and integration strategies, including supported databases (MySQL, PostgreSQL, SQLite, SQLServer), Go version/platform requirements, and considerations for using features like SQLite's JSON1 extension. Learn about interoperability points and tips for smooth adoption in existing GORM projects."
+---
+
+# Integration & Compatibility
+
+Ensure seamless integration of GORM Data Types into your Go applications by understanding the supported databases, Go version and platform requirements, and specific considerations for features like SQLite's JSON1 extension. This guide helps you navigate compatibility nuances and best practices for adopting GORM Data Types smoothly within existing GORM projects.
+
+---
+
+## Supported Databases
+
+GORM Data Types are designed to work transparently across major SQL databases, including:
+
+- **MySQL**
+- **PostgreSQL**
+- **SQLite** (with JSON1 extension)
+- **SQLServer**
+
+Each database has tailored implementations aligned with its native JSON and other advanced data types, ensuring optimal compatibility and performance.
+
+### Database-Specific Notes
+
+| Database   | JSON Support Details                                                                                 | Notes                                                                                  |
+|------------|----------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------|
+| MySQL      | Supports `JSON` data type. Cast query parameters as JSON when needed (`CAST(? AS JSON)`).           | MariaDB does not support `CAST(? AS JSON)`, falling back to strings in that case.      |
+| PostgreSQL | Supports `JSONB` for efficient JSON storage and querying.                                          | Uses different JSON path syntax; functions like `json_extract_path_text` enable queries. |
+| SQLite     | Uses `JSON` data type with the JSON1 extension for JSON functions and queries.                      | Requires build with `json1` tag (e.g., `go build --tags json1`).                       |
+| SQLServer  | Supports `NVARCHAR(MAX)` for JSON storage, without native JSON type.                              | JSON queries and updates have limited native support compared to others.               |
+
+<Note>
+For SQLite JSON functionalities, ensure your SQLite driver is compiled with the `json1` extension enabled, which GORM Data Types rely on for JSON queries and mutations.
+</Note>
+
+---
+
+## Go Version and Platform Requirements
+
+GORM Data Types require a compatible Go environment that supports generics (Go 1.18+).
+
+- **Go Version:** 1.18 or newer, due to generic types usage (`JSONType[T]`, `JSONSlice[T]`).
+- **Platform:** Compatible with all major platforms and architectures supported by Go and GORM.
+
+<Check>
+Make sure your Go modules are up to date and your project builds with Go 1.18 or higher to leverage all features offered by GORM Data Types.
+</Check>
+
+---
+
+## Integration Strategies for Smooth Adoption
+
+To make the most of GORM Data Types and avoid common pitfalls, follow these best practices:
+
+### 1. Align Your Database Version and Driver
+
+- Use recent stable versions of your database to ensure support for JSON and related advanced data types.
+- Confirm your Go database driver (e.g., `mysql`, `postgres`, `sqlite`) is compatible with your GORM version.
+
+### 2. Handle SQLite JSON1 Requirement
+
+- Explicitly enable the `json1` extension during SQLite driver installation or build.
+- When building your Go application, add the `json1` build tag:  
+  ```bash
+  go build --tags json1
+  ```
+- This ensures SQL queries relying on JSON functions execute correctly.
+
+### 3. Cross-Database Design Considerations
+
+Design your database models understanding the slight differences in JSON data handling:
+
+- **Path Notation:** MySQL and SQLite use dot notation (`$.age`), while PostgreSQL uses array notation (`{age}`).
+- **Query Expressions:** Use GORM Data Types’ query helpers like `JSONQuery`, `JSONSet`, and `JSONArrayQuery` to abstract database-specific syntax.
+
+### 4. Avoid Features Not Supported by Certain Dialects
+
+- For instance, `JSON_OVERLAPS` is supported only by MySQL, and not by SQLite or PostgreSQL.
+- `JSONSlice[T]` and `JSONType[T]` currently don’t support JSON queries and `db.Pluck` fully.
+
+### 5. Handling MariaDB Compatibility
+
+- MariaDB lacks support for `CAST(? AS JSON)`. When using MariaDB with JSON, GORM Data Types serialize data mostly as strings.
+
+<Warning>
+Beware of database-specific constraints when working with JSON mutations — some SQL constructs, such as atomic JSON updates, may behave differently or require manual tweaking on certain databases.
+</Warning>
+
+---
+
+## Interoperability Points with GORM
+
+GORM Data Types are fully integrated with the GORM ORM layer:
+
+- Automatically register custom data types for migrations and schema generation.
+- Support common GORM workflows: Create, Update, Query, and Delete.
+- Provide driver.Valuer and sql.Scanner implementations allowing smooth serialization from Go types to database columns.
+- Supply query and mutation helper expressions (`clause.Expression` implementations) that integrate seamlessly within GORM queries.
+
+### Example: Query JSON Columns Across Databases
+
+Using the JSONQuery helper abstracts away database differences:
+
+```go
+// Find users where 'attributes.role' exists
+DB.Find(&users, datatypes.JSONQuery("attributes").HasKey("role"))
+
+// Find users where 'attributes.name' equals 'jinzhu'
+DB.First(&user, datatypes.JSONQuery("attributes").Equals("jinzhu", "name"))
+```
+
+Behind the scenes, GORM Data Types build correct SQL syntax based on the underlying database dialect.
+
+---
+
+## Troubleshooting Tips
+
+- If JSON queries fail on SQLite, verify the `json1` build tag is enabled.
+- In MySQL, confirm your database server version and driver correctly support `CAST(? AS JSON)` for JSON mutation queries.
+- When upgrading your database or Go version, test JSON-related database operations thoroughly to catch compatibility issues.
+
+---
+
+## Next Steps
+
+- Review the [Feature Highlights](/overview/feature-preview/feature-highlights) page to explore core capabilities.
+- Proceed to [Configure Your Project for GORM Data Types](/getting-started/first-usage/configure-project) for setup guidance.
+- Explore the API Reference sections on [JSON Query Helpers](/api-reference/advanced-operations/json-query-helpers) and [JSON Mutation Helpers](/api-reference/advanced-operations/json-update-helpers) for advanced workflows.
+
+---
+
+## See Also
+
+- [What is GORM Data Types?](/overview/introduction-value/what-is-gorm-datatypes)
+- [Why Use GORM Data Types?](/overview/introduction-value/value-proposition)
+- [Using JSON Columns Across Different Databases](/guides/core-data-types/using-json-columns)
+- [Safely Updating JSON Fields In-Place](/guides/advanced-json-patterns/atomic-json-update)
+
+
+---
+
+<CardGroup cols={2}>
+<Card title="SQLite JSON1 Extension">
+<Note>
+Enabling JSON1 is critical for JSON query and update support in SQLite: `go build --tags json1`
+</Note>
+</Card>
+<Card title="MariaDB JSON Limitations">
+<Warning>
+MariaDB does not support `CAST(? AS JSON)`. Use workarounds or fallbacks when targeting MariaDB.
+</Warning>
+</Card>
+</CardGroup>
+
+
+---
+
+<Info>
+Need help? Join the GORM community or check out the GitHub repository for issues and discussions: [https://github.com/go-gorm/datatypes](https://github.com/go-gorm/datatypes)
+</Info>
